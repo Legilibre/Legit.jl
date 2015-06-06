@@ -62,7 +62,7 @@ function main()
     require,
   ) |> to_value
 
-  # articles_tree = transform_structure_to_articles_tree(changed_by_changer, args["dir"], textelr["STRUCT"],
+  # articles_tree = parse_structure(changed_by_changer, args["dir"], textelr["STRUCT"],
   #   texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITREFULL"])
   # if get(texte_version, "VISAS", nothing) != nothing
   #   unshift!(articles_tree.children, NonArticle("", texte_version["VISAS"]["CONTENU"]))
@@ -74,7 +74,7 @@ function main()
 
   changed_by_changer = @compat Dict{Changer, Changed}()
   root_table_of_content = RootTableOfContent(texte_version, textelr)
-  transform_structure_to_articles_tree(changed_by_changer, args["dir"], root_table_of_content)
+  parse_structure(changed_by_changer, args["dir"], root_table_of_content)
   changers = sort(collect(keys(changed_by_changer)))
 
   if !args["dry-run"]

@@ -249,62 +249,7 @@ node_title(table_of_content::RootTableOfContent) = table_of_content.texte_versio
 node_title(table_of_content::TableOfContent) = table_of_content.dict["TITRE_TA"]
 
 
-function parse_xml_element(xml_element::XMLElement)
-  element = @compat Dict{String, Any}()
-  for attribute in attributes(xml_element)
-    element[string('@', name(attribute))] = value(attribute)
-  end
-  previous = element
-  for xml_node in child_nodes(xml_element)
-    if is_textnode(xml_node)
-      if previous === element
-        element["^text"] = get(element, "^text", "") * content(xml_node)
-      else
-        previous["^tail"] = get(element, "^tail", "") * content(xml_node)
-      end
-    elseif is_elementnode(xml_node)
-      xml_child = XMLElement(xml_node)
-      child_name = name(xml_child)
-      if child_name == "CONTENU"
-        @assert !(child_name in element)
-        element[child_name] = xml_child
-      else
-        child = parse_xml_element(xml_child)
-        same_children = get!(element, child_name) do
-          return Dict{String, Any}[]
-        end
-        push!(same_children, child)
-        previous = child
-      end
-    end
-  end
-  return element
-end
-
-
-function repair_article_creation_date(creation_date::Date, contexte::Dict)
-  tm = get(contexte, "TM", nothing)
-  if tm === nothing
-    return creation_date
-  end
-  return repair_article_creation_date(max(creation_date, tm["TITRE_TM"]["@debut"]), tm)
-end
-
-
-function repair_article_deletion_date(deletion_date::Date, contexte::Dict)
-  tm = get(contexte, "TM", nothing)
-  if tm === nothing
-    return deletion_date
-  end
-  date = get(tm["TITRE_TM"], "@fin", nothing)
-  if date !== nothing
-    deletion_date = min(deletion_date, date)
-  end
-  return repair_article_deletion_date(deletion_date, tm)
-end
-
-
-function transform_structure_to_articles_tree(changed_by_changer::Dict{Changer, Changed}, dir::String,
+function parse_structure(changed_by_changer::Dict{Changer, Changed}, dir::String,
     table_of_content::AbstractTableOfContent)
   structure = node_structure(table_of_content)
 
@@ -316,7 +261,7 @@ function transform_structure_to_articles_tree(changed_by_changer::Dict{Changer, 
       require,
     ) |> to_value
     child_table_of_content = TableOfContent(table_of_content, section_ta)
-    transform_structure_to_articles_tree(changed_by_changer, dir, child_table_of_content)
+    parse_structure(changed_by_changer, dir, child_table_of_content)
   end
 
   for lien_article in get(structure, "LIEN_ART", Dict{String, Any}[])
@@ -428,4 +373,59 @@ function transform_structure_to_articles_tree(changed_by_changer::Dict{Changer, 
       rethrow()
     end
   end
+end
+
+
+function parse_xml_element(xml_element::XMLElement)
+  element = @compat Dict{String, Any}()
+  for attribute in attributes(xml_element)
+    element[string('@', name(attribute))] = value(attribute)
+  end
+  previous = element
+  for xml_node in child_nodes(xml_element)
+    if is_textnode(xml_node)
+      if previous === element
+        element["^text"] = get(element, "^text", "") * content(xml_node)
+      else
+        previous["^tail"] = get(element, "^tail", "") * content(xml_node)
+      end
+    elseif is_elementnode(xml_node)
+      xml_child = XMLElement(xml_node)
+      child_name = name(xml_child)
+      if child_name == "CONTENU"
+        @assert !(child_name in element)
+        element[child_name] = xml_child
+      else
+        child = parse_xml_element(xml_child)
+        same_children = get!(element, child_name) do
+          return Dict{String, Any}[]
+        end
+        push!(same_children, child)
+        previous = child
+      end
+    end
+  end
+  return element
+end
+
+
+function repair_article_creation_date(creation_date::Date, contexte::Dict)
+  tm = get(contexte, "TM", nothing)
+  if tm === nothing
+    return creation_date
+  end
+  return repair_article_creation_date(max(creation_date, tm["TITRE_TM"]["@debut"]), tm)
+end
+
+
+function repair_article_deletion_date(deletion_date::Date, contexte::Dict)
+  tm = get(contexte, "TM", nothing)
+  if tm === nothing
+    return deletion_date
+  end
+  date = get(tm["TITRE_TM"], "@fin", nothing)
+  if date !== nothing
+    deletion_date = min(deletion_date, date)
+  end
+  return repair_article_deletion_date(deletion_date, tm)
 end
