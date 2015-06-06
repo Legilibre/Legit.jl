@@ -87,85 +87,73 @@ function main()
       committer_signature = author_signature
       changed = changed_by_changer[changer]
 
-      tree_builder_by_table_of_content = @compat Dict{AbstractTableOfContent, GitTreeBuilder}()
+      tree_builder_by_git_dir_names = @compat Dict{Tuple, GitTreeBuilder}()
       for article in changed.articles
         blob = blob_from_buffer(repository, all_in_one_commonmark(article))
-        container = article.container
-        tree_builder = get!(tree_builder_by_table_of_content, container) do
+        git_dir_names = tuple(split(section_git_dir(article), '/')...)
+        tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
           if root_tree === nothing
             latest_tree = nothing
-          elseif isa(container, RootTableOfContent)
+          elseif isempty(git_dir_names)
             latest_tree = root_tree
           else
-            entry = entry_bypath(root_tree, git_dir(container))
+            entry = entry_bypath(root_tree, join(git_dir_names, '/'))
             latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
           end
           return GitTreeBuilder(repository, latest_tree)
         end
-        insert!(tree_builder, string("article_", article.dict["META"]["META_SPEC"]["META_ARTICLE"]["NUM"], ".md"),
-          Oid(blob), int(0o100644))  # FILEMODE_BLOB
+        insert!(tree_builder, section_filename(article), Oid(blob), int(0o100644))  # FILEMODE_BLOB
       end
 
       for article in changed.deleted_articles
-        container = article.container
-        tree_builder = get!(tree_builder_by_table_of_content, container) do
+        git_dir_names = tuple(split(section_git_dir(article), '/')...)
+        tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
           if root_tree === nothing
             latest_tree = nothing
+          elseif isempty(git_dir_names)
+            latest_tree = root_tree
           else
-            if isa(container, RootTableOfContent)
-              latest_tree = root_tree
-            else
-              entry = entry_bypath(root_tree, git_dir(container))
-              latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
-            end
+            entry = entry_bypath(root_tree, join(git_dir_names, '/'))
+            latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
           end
           return GitTreeBuilder(repository, latest_tree)
         end
-        delete!(tree_builder, string("article_", article.dict["META"]["META_SPEC"]["META_ARTICLE"]["NUM"], ".md"))
+        delete!(tree_builder, section_filename(article))
       end
 
       root_tree_oid = nothing
-      while !isempty(tree_builder_by_table_of_content)
-        tables_of_content_to_build = Set(keys(tree_builder_by_table_of_content))
-        for (table_of_content, tree_builder) in tree_builder_by_table_of_content
-          if !isa(table_of_content, RootTableOfContent)
-            container = table_of_content.container
-            while true
-              pop!(tables_of_content_to_build, container, nothing)
-              if isa(container, RootTableOfContent)
-                break
-              end
-              container = container.container
-            end
+      while !isempty(tree_builder_by_git_dir_names)
+        git_dirs_names_to_build = Set(keys(tree_builder_by_git_dir_names))
+        for (git_dir_names, tree_builder) in tree_builder_by_git_dir_names
+          while !isempty(git_dir_names)
+            git_dir_names = git_dir_names[1 : end - 1]
+            pop!(git_dirs_names_to_build, git_dir_names, nothing)
           end
         end
-        for table_of_content in tables_of_content_to_build
-          tree_builder = pop!(tree_builder_by_table_of_content, table_of_content)
-          if length(tree_builder) == 0
-            tree_oid = nothing
-          else
-            tree_oid = write!(tree_builder)
-          end
-          if isa(table_of_content, RootTableOfContent)
+        for git_dir_names in git_dirs_names_to_build
+          tree_builder = pop!(tree_builder_by_git_dir_names, git_dir_names)
+          tree_oid = length(tree_builder) == 0 ? nothing : write!(tree_builder)
+          if isempty(git_dir_names)
             root_tree_oid = tree_oid
           else
-            container = table_of_content.container
-            @assert !(container in tree_builder_by_table_of_content)
-            tree_builder = get!(tree_builder_by_table_of_content, container) do
+            dir_name = git_dir_names[end]
+            git_dir_names = git_dir_names[1 : end - 1]
+            @assert !(git_dir_names in git_dirs_names_to_build)
+            tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
               if root_tree === nothing
                 latest_tree = nothing
-              elseif isa(container, RootTableOfContent)
+              elseif isempty(git_dir_names)
                 latest_tree = root_tree
               else
-                entry = entry_bypath(root_tree, git_dir(container))
+                entry = entry_bypath(root_tree, join(git_dir_names, '/'))
                 latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
               end
               return GitTreeBuilder(repository, latest_tree)
             end
             if tree_oid === nothing
-              delete!(tree_builder, dir_name(table_of_content))
+              delete!(tree_builder, dir_name)
             else
-              insert!(tree_builder, dir_name(table_of_content), tree_oid, int(0o40000))  # FILEMODE_TREE
+              insert!(tree_builder, dir_name, tree_oid, int(0o40000))  # FILEMODE_TREE
             end
           end
         end

@@ -7,23 +7,25 @@
 # The GitLegistique.jl package is licensed under the MIT "Expat" License.
 
 
-abstract AbstractTableOfContent
+const number_by_latin_extension = @compat Dict{String, String}(
+  "bis" => "002",
+  "ter" => "003",
+  "quater" => "004",
+  "quinquies" => "005",
+  "sexies" => "006",
+  "septies" => "007",
+  "octies" => "008",
+  "novies" => "009",
+  "decies" => "010",
+)
 
 
-type RootTableOfContent <: AbstractTableOfContent
-  texte_version::Dict  # Dict{String, Any}
-  textelr::Dict  # Dict{String, Any}
-end
+abstract Section
+abstract AbstractTableOfContent <: Section
 
 
-type TableOfContent <: AbstractTableOfContent
+type Article <: Section
   container::AbstractTableOfContent
-  dict::Dict  # Dict{String, Any}
-end
-
-
-type Article
-  container::TableOfContent
   dict::Dict  # Dict{String, Any}
 end
 
@@ -45,12 +47,18 @@ end
 type NonArticle
   title::String
   content::XMLElement
+
+
+type RootTableOfContent <: AbstractTableOfContent
+  texte_version::Dict  # Dict{String, Any}
+  textelr::Dict  # Dict{String, Any}
 end
 
 
-type Section
-  title::String
-  children::Array{Union(Article, NonArticle, Section)}
+type TableOfContent <: AbstractTableOfContent
+  container::AbstractTableOfContent
+  dict::Dict  # Dict{String, Any}
+end
 end
 
 
@@ -58,8 +66,7 @@ function all_in_one_commonmark(article::Article; depth::Int = 1)
   blocks = String[
     "#" ^ depth,
     " ",
-    "Article ",
-    article.dict["META"]["META_SPEC"]["META_ARTICLE"]["NUM"],
+    section_title(article),
     "\n\n",
   ]
   content = all_in_one_commonmark(article.dict["BLOC_TEXTUEL"]["CONTENU"])
@@ -92,22 +99,6 @@ function all_in_one_commonmark(non_article::NonArticle; depth::Int = 1)
   return join(blocks)
 end
 
-function all_in_one_commonmark(section::Section; depth::Int = 1)
-  blocks = String[]
-  if !isempty(section.title)
-    push!(blocks,
-      "#" ^ depth,
-      " ",
-      section.title,
-      "\n\n",
-    )
-  end
-  for child in section.children
-    push!(blocks, all_in_one_commonmark(child, depth = depth + 1))
-  end
-  return join(blocks)
-end
-
 function all_in_one_commonmark(xhtml_element::XMLElement; depth::Int = 1)
   blocks = String[]
   for xhtml_node in child_nodes(xhtml_element)
@@ -136,25 +127,6 @@ function all_in_one_commonmark(xhtml_element::XMLElement; depth::Int = 1)
   end
   return join(blocks)
 end
-
-
-dir_name(table_of_content::RootTableOfContent) = ""
-
-dir_name(table_of_content::TableOfContent) = slugify(table_of_content_title(table_of_content); separator = '_')
-
-
-git_dir(article::Article) = git_dir(article.dict["CONTEXTE"]["TEXTE"]["TM"])
-
-function git_dir(tm::Dict)
-  slug = slugify(tm["TITRE_TM"]["^text"]; separator = '_')
-  tm = get(tm, "TM", nothing)
-  return tm === nothing ? slug : string(slug, '/', git_dir(tm))
-end
-
-git_dir(table_of_content::RootTableOfContent) = ""
-
-git_dir(table_of_content::TableOfContent) = lstrip(
-  string(git_dir(table_of_content.container), '/', dir_name(table_of_content)), '/')
 
 
 hash(changer::Changer, h::Uint64) = hash(changer.date, h) $ hash(changer.message, h)
@@ -236,20 +208,105 @@ function repair_article_deletion_date(deletion_date::Date, contexte::Dict)
 end
 
 
-table_of_content_structure(table_of_content::RootTableOfContent) = table_of_content.textelr["STRUCT"]
+section_dir_name(table_of_content::RootTableOfContent) = ""
 
-table_of_content_structure(table_of_content::TableOfContent) = table_of_content.dict["STRUCTURE_TA"]
+section_dir_name(table_of_content::TableOfContent) = section_dir_name(section_title(table_of_content))
+
+section_dir_name(title::String) = slugify(string(split(strip(title))[1], '_', section_number(title)); separator = '_')
 
 
-table_of_content_title(table_of_content::RootTableOfContent) = table_of_content.texte_version["META"]["META_SPEC"][
+section_filename(article::Article) = string("article_", section_number(article), ".md")
+
+section_filename(table_of_content::AbstractTableOfContent) = "README.md"
+
+
+section_git_dir(article::Article) = section_git_dir(article.dict["CONTEXTE"]["TEXTE"]["TM"])
+
+function section_git_dir(tm::Dict)
+  dir_name = section_dir_name(tm["TITRE_TM"]["^text"])
+  tm = get(tm, "TM", nothing)
+  return tm === nothing ? dir_name : string(dir_name, '/', section_git_dir(tm))
+end
+
+section_git_dir(table_of_content::RootTableOfContent) = ""
+
+section_git_dir(table_of_content::TableOfContent) = lstrip(
+  string(section_git_dir(table_of_content.container), '/', section_dir_name(table_of_content)), '/')
+
+
+section_number(article::Article) = article.dict["META"]["META_SPEC"]["META_ARTICLE"]["NUM"]
+
+section_number(table_of_content::TableOfContent) = section_number(section_title(table_of_content))
+
+function section_number(title::String)
+  number_fragments = String[]
+  for fragment in split(strip(title))[2:end]
+    if isdigit(fragment) || lowercase(fragment) == "ier" || ismatch(r"^[ivxlcdm]+$", lowercase(fragment)) ||
+        fragment in keys(number_by_latin_extension) || isempty(number_fragments)
+      push!(number_fragments, fragment)
+    else
+      break
+    end
+  end
+  return join(number_fragments, ' ')
+end
+
+
+function section_sortable_number(section::Section)
+  number_fragments = String[]
+  slug = slugify(section_number(section); separator = '_')
+  for fragment in split(slug, '_')
+    if isdigit(fragment)
+      @assert len(fragment) <= 3
+      push!(number_fragments, ("000" * fragment)[end - 3: end])
+    elseif fragment == "ier"
+      push!(number_fragments, "001")
+    elseif ismatch(r"^[ivxlcdm]+$", fragment)
+      value = 0
+      for letter in fragment
+        digit = [
+          'i' => 1,
+          'v' => 5,
+          'x' => 10,
+          'l' => 50,
+          'c' => 100,
+          'd' => 500,
+          'm' => 1000,
+        ][letter]
+        if digit > value
+          value = digit - value
+        else
+          value += digit
+        end
+      end
+      @assert value < 1000
+      push!(number_fragments, string("000", value)[end - 3: end])
+    else
+      number = get(number_by_latin_extension, fragment, "")
+      @assert !isempty(number) "Invalid number: $fragment."
+      push!(number_fragments, number)
+    end
+  end
+  return join(number_fragments, '-')
+end
+
+
+section_structure(table_of_content::RootTableOfContent) = table_of_content.textelr["STRUCT"]
+
+section_structure(table_of_content::TableOfContent) = table_of_content.dict["STRUCTURE_TA"]
+
+
+section_title(article::Article) = string("Article ", section_number(article))
+
+section_title(table_of_content::RootTableOfContent) = table_of_content.texte_version["META"]["META_SPEC"][
   "META_TEXTE_VERSION"]["TITREFULL"]
 
-table_of_content_title(table_of_content::TableOfContent) = table_of_content.dict["TITRE_TA"]
+section_title(table_of_content::TableOfContent) = table_of_content.dict["TITRE_TA"]
 
 
 function transform_structure_to_articles_tree(changed_by_changer::Dict{Changer, Changed}, dir::String,
     table_of_content::AbstractTableOfContent)
-  structure = table_of_content_structure(table_of_content)
+  structure = section_structure(table_of_content)
 
   for lien_section_ta in get(structure, "LIEN_SECTION_TA", Dict{String, Any}[])
     section_ta_file_path = joinpath(dir, "section_ta" * lien_section_ta["@url"])
@@ -350,7 +407,8 @@ function transform_structure_to_articles_tree(changed_by_changer::Dict{Changer, 
             end
           end
           if next_article !== nothing &&
-              git_dir(article["CONTEXTE"]["TEXTE"]["TM"]) != git_dir(next_article["CONTEXTE"]["TEXTE"]["TM"])
+              section_git_dir(article["CONTEXTE"]["TEXTE"]["TM"]) != section_git_dir(next_article["CONTEXTE"]["TEXTE"][
+                "TM"])
             # Article has moved.
             delete_article = true
           end
@@ -365,11 +423,9 @@ function transform_structure_to_articles_tree(changed_by_changer::Dict{Changer, 
         end
       end
     catch
-      warn("An exception occured in article $(meta_article["NUM"]) [$(get(meta_article, "ETAT", "inconnu"))]:" *
+      warn("An exception occured in $(section_filename(article)) [$(get(meta_article, "ETAT", "inconnu"))]:" *
         " $(article["META"]["META_COMMUN"]["ID"]).")
       rethrow()
     end
   end
-
-  # return isempty(children) ? nothing: Section(title, children)
 end
