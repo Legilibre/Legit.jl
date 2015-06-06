@@ -44,9 +44,10 @@ immutable Changer
 end
 
 
-type NonArticle
-  title::String
-  content::XMLElement
+# type NonArticle
+#   title::String
+#   content::XMLElement
+# end
 
 
 type RootTableOfContent <: AbstractTableOfContent
@@ -58,7 +59,6 @@ end
 type TableOfContent <: AbstractTableOfContent
   container::AbstractTableOfContent
   dict::Dict  # Dict{String, Any}
-end
 end
 
 
@@ -79,25 +79,25 @@ function all_in_one_commonmark(article::Article; depth::Int = 1)
   return join(blocks)
 end
 
-function all_in_one_commonmark(non_article::NonArticle; depth::Int = 1)
-  blocks = String[]
-  if !isempty(non_article.title)
-    push!(blocks,
-      "#" ^ depth,
-      " ",
-      non_article.title,
-      "\n\n",
-    )
-  end
-  content = all_in_one_commonmark(non_article.dict["BLOC_TEXTUEL"]["CONTENU"])
-  content = join(map(strip, split(content, '\n')), '\n')
-  while searchindex(content, "\n\n\n") > 0
-    content = replace(content, "\n\n\n", "\n\n")
-  end
-  push!(blocks, strip(content))
-  push!(blocks, "\n\n")
-  return join(blocks)
-end
+# function all_in_one_commonmark(non_article::NonArticle; depth::Int = 1)
+#   blocks = String[]
+#   if !isempty(non_article.title)
+#     push!(blocks,
+#       "#" ^ depth,
+#       " ",
+#       non_article.title,
+#       "\n\n",
+#     )
+#   end
+#   content = all_in_one_commonmark(non_article.dict["BLOC_TEXTUEL"]["CONTENU"])
+#   content = join(map(strip, split(content, '\n')), '\n')
+#   while searchindex(content, "\n\n\n") > 0
+#     content = replace(content, "\n\n\n", "\n\n")
+#   end
+#   push!(blocks, strip(content))
+#   push!(blocks, "\n\n")
+#   return join(blocks)
+# end
 
 function all_in_one_commonmark(xhtml_element::XMLElement; depth::Int = 1)
   blocks = String[]
