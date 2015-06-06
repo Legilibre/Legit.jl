@@ -20,11 +20,11 @@ const number_by_latin_extension = @compat Dict{String, String}(
 )
 
 
-abstract Section
-abstract AbstractTableOfContent <: Section
+abstract Node
+abstract AbstractTableOfContent <: Node
 
 
-type Article <: Section
+type Article <: Node
   container::AbstractTableOfContent
   dict::Dict  # Dict{String, Any}
 end
@@ -66,7 +66,7 @@ function all_in_one_commonmark(article::Article; depth::Int = 1)
   blocks = String[
     "#" ^ depth,
     " ",
-    section_title(article),
+    node_title(article),
     "\n\n",
   ]
   content = all_in_one_commonmark(article.dict["BLOC_TEXTUEL"]["CONTENU"])
@@ -153,6 +153,102 @@ function load_article(dir::String, id::String)
 end
 
 
+node_dir_name(table_of_content::RootTableOfContent) = ""
+
+node_dir_name(table_of_content::TableOfContent) = node_dir_name(node_title(table_of_content))
+
+node_dir_name(title::String) = slugify(string(split(strip(title))[1], '_', node_number(title)); separator = '_')
+
+
+node_filename(article::Article) = string("article_", node_number(article), ".md")
+
+node_filename(table_of_content::AbstractTableOfContent) = "README.md"
+
+
+node_git_dir(article::Article) = node_git_dir(article.dict["CONTEXTE"]["TEXTE"]["TM"])
+
+function node_git_dir(tm::Dict)
+  dir_name = node_dir_name(tm["TITRE_TM"]["^text"])
+  tm = get(tm, "TM", nothing)
+  return tm === nothing ? dir_name : string(dir_name, '/', node_git_dir(tm))
+end
+
+node_git_dir(table_of_content::RootTableOfContent) = ""
+
+node_git_dir(table_of_content::TableOfContent) = lstrip(
+  string(node_git_dir(table_of_content.container), '/', node_dir_name(table_of_content)), '/')
+
+
+node_number(article::Article) = article.dict["META"]["META_SPEC"]["META_ARTICLE"]["NUM"]
+
+node_number(table_of_content::TableOfContent) = node_number(node_title(table_of_content))
+
+function node_number(title::String)
+  number_fragments = String[]
+  for fragment in split(strip(title))[2:end]
+    if isdigit(fragment) || lowercase(fragment) == "ier" || ismatch(r"^[ivxlcdm]+$", lowercase(fragment)) ||
+        fragment in keys(number_by_latin_extension) || isempty(number_fragments)
+      push!(number_fragments, fragment)
+    else
+      break
+    end
+  end
+  return join(number_fragments, ' ')
+end
+
+
+function node_sortable_number(node::Node)
+  number_fragments = String[]
+  slug = slugify(node_number(node); separator = '_')
+  for fragment in split(slug, '_')
+    if isdigit(fragment)
+      @assert len(fragment) <= 3
+      push!(number_fragments, ("000" * fragment)[end - 3: end])
+    elseif fragment == "ier"
+      push!(number_fragments, "001")
+    elseif ismatch(r"^[ivxlcdm]+$", fragment)
+      value = 0
+      for letter in fragment
+        digit = [
+          'i' => 1,
+          'v' => 5,
+          'x' => 10,
+          'l' => 50,
+          'c' => 100,
+          'd' => 500,
+          'm' => 1000,
+        ][letter]
+        if digit > value
+          value = digit - value
+        else
+          value += digit
+        end
+      end
+      @assert value < 1000
+      push!(number_fragments, string("000", value)[end - 3: end])
+    else
+      number = get(number_by_latin_extension, fragment, "")
+      @assert !isempty(number) "Invalid number: $fragment."
+      push!(number_fragments, number)
+    end
+  end
+  return join(number_fragments, '-')
+end
+
+
+node_structure(table_of_content::RootTableOfContent) = table_of_content.textelr["STRUCT"]
+
+node_structure(table_of_content::TableOfContent) = table_of_content.dict["STRUCTURE_TA"]
+
+
+node_title(article::Article) = string("Article ", node_number(article))
+
+node_title(table_of_content::RootTableOfContent) = table_of_content.texte_version["META"]["META_SPEC"][
+  "META_TEXTE_VERSION"]["TITREFULL"]
+
+node_title(table_of_content::TableOfContent) = table_of_content.dict["TITRE_TA"]
+
+
 function parse_xml_element(xml_element::XMLElement)
   element = @compat Dict{String, Any}()
   for attribute in attributes(xml_element)
@@ -208,105 +304,9 @@ function repair_article_deletion_date(deletion_date::Date, contexte::Dict)
 end
 
 
-section_dir_name(table_of_content::RootTableOfContent) = ""
-
-section_dir_name(table_of_content::TableOfContent) = section_dir_name(section_title(table_of_content))
-
-section_dir_name(title::String) = slugify(string(split(strip(title))[1], '_', section_number(title)); separator = '_')
-
-
-section_filename(article::Article) = string("article_", section_number(article), ".md")
-
-section_filename(table_of_content::AbstractTableOfContent) = "README.md"
-
-
-section_git_dir(article::Article) = section_git_dir(article.dict["CONTEXTE"]["TEXTE"]["TM"])
-
-function section_git_dir(tm::Dict)
-  dir_name = section_dir_name(tm["TITRE_TM"]["^text"])
-  tm = get(tm, "TM", nothing)
-  return tm === nothing ? dir_name : string(dir_name, '/', section_git_dir(tm))
-end
-
-section_git_dir(table_of_content::RootTableOfContent) = ""
-
-section_git_dir(table_of_content::TableOfContent) = lstrip(
-  string(section_git_dir(table_of_content.container), '/', section_dir_name(table_of_content)), '/')
-
-
-section_number(article::Article) = article.dict["META"]["META_SPEC"]["META_ARTICLE"]["NUM"]
-
-section_number(table_of_content::TableOfContent) = section_number(section_title(table_of_content))
-
-function section_number(title::String)
-  number_fragments = String[]
-  for fragment in split(strip(title))[2:end]
-    if isdigit(fragment) || lowercase(fragment) == "ier" || ismatch(r"^[ivxlcdm]+$", lowercase(fragment)) ||
-        fragment in keys(number_by_latin_extension) || isempty(number_fragments)
-      push!(number_fragments, fragment)
-    else
-      break
-    end
-  end
-  return join(number_fragments, ' ')
-end
-
-
-function section_sortable_number(section::Section)
-  number_fragments = String[]
-  slug = slugify(section_number(section); separator = '_')
-  for fragment in split(slug, '_')
-    if isdigit(fragment)
-      @assert len(fragment) <= 3
-      push!(number_fragments, ("000" * fragment)[end - 3: end])
-    elseif fragment == "ier"
-      push!(number_fragments, "001")
-    elseif ismatch(r"^[ivxlcdm]+$", fragment)
-      value = 0
-      for letter in fragment
-        digit = [
-          'i' => 1,
-          'v' => 5,
-          'x' => 10,
-          'l' => 50,
-          'c' => 100,
-          'd' => 500,
-          'm' => 1000,
-        ][letter]
-        if digit > value
-          value = digit - value
-        else
-          value += digit
-        end
-      end
-      @assert value < 1000
-      push!(number_fragments, string("000", value)[end - 3: end])
-    else
-      number = get(number_by_latin_extension, fragment, "")
-      @assert !isempty(number) "Invalid number: $fragment."
-      push!(number_fragments, number)
-    end
-  end
-  return join(number_fragments, '-')
-end
-
-
-section_structure(table_of_content::RootTableOfContent) = table_of_content.textelr["STRUCT"]
-
-section_structure(table_of_content::TableOfContent) = table_of_content.dict["STRUCTURE_TA"]
-
-
-section_title(article::Article) = string("Article ", section_number(article))
-
-section_title(table_of_content::RootTableOfContent) = table_of_content.texte_version["META"]["META_SPEC"][
-  "META_TEXTE_VERSION"]["TITREFULL"]
-
-section_title(table_of_content::TableOfContent) = table_of_content.dict["TITRE_TA"]
-
-
 function transform_structure_to_articles_tree(changed_by_changer::Dict{Changer, Changed}, dir::String,
     table_of_content::AbstractTableOfContent)
-  structure = section_structure(table_of_content)
+  structure = node_structure(table_of_content)
 
   for lien_section_ta in get(structure, "LIEN_SECTION_TA", Dict{String, Any}[])
     section_ta_file_path = joinpath(dir, "section_ta" * lien_section_ta["@url"])
@@ -407,7 +407,7 @@ function transform_structure_to_articles_tree(changed_by_changer::Dict{Changer, 
             end
           end
           if next_article !== nothing &&
-              section_git_dir(article["CONTEXTE"]["TEXTE"]["TM"]) != section_git_dir(next_article["CONTEXTE"]["TEXTE"][
+              node_git_dir(article["CONTEXTE"]["TEXTE"]["TM"]) != node_git_dir(next_article["CONTEXTE"]["TEXTE"][
                 "TM"])
             # Article has moved.
             delete_article = true
@@ -423,7 +423,7 @@ function transform_structure_to_articles_tree(changed_by_changer::Dict{Changer, 
         end
       end
     catch
-      warn("An exception occured in $(section_filename(article)) [$(get(meta_article, "ETAT", "inconnu"))]:" *
+      warn("An exception occured in $(node_filename(article)) [$(get(meta_article, "ETAT", "inconnu"))]:" *
         " $(article["META"]["META_COMMUN"]["ID"]).")
       rethrow()
     end

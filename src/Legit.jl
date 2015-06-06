@@ -90,7 +90,7 @@ function main()
       tree_builder_by_git_dir_names = @compat Dict{Tuple, GitTreeBuilder}()
       for article in changed.articles
         blob = blob_from_buffer(repository, all_in_one_commonmark(article))
-        git_dir_names = tuple(split(section_git_dir(article), '/')...)
+        git_dir_names = tuple(split(node_git_dir(article), '/')...)
         tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
           if root_tree === nothing
             latest_tree = nothing
@@ -102,11 +102,11 @@ function main()
           end
           return GitTreeBuilder(repository, latest_tree)
         end
-        insert!(tree_builder, section_filename(article), Oid(blob), int(0o100644))  # FILEMODE_BLOB
+        insert!(tree_builder, node_filename(article), Oid(blob), int(0o100644))  # FILEMODE_BLOB
       end
 
       for article in changed.deleted_articles
-        git_dir_names = tuple(split(section_git_dir(article), '/')...)
+        git_dir_names = tuple(split(node_git_dir(article), '/')...)
         tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
           if root_tree === nothing
             latest_tree = nothing
@@ -118,7 +118,7 @@ function main()
           end
           return GitTreeBuilder(repository, latest_tree)
         end
-        delete!(tree_builder, section_filename(article))
+        delete!(tree_builder, node_filename(article))
       end
 
       root_tree_oid = nothing
