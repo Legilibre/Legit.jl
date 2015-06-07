@@ -34,9 +34,9 @@ function main()
     if ispath(args["repository"])
       @assert isdir(args["repository"])
       @assert iswritable(args["repository"])
-    else
-      mkpath(args["repository"])
+      rm(args["repository"]; recursive = true)
     end
+    mkpath(args["repository"])
     repository = init_repo(args["repository"]; bare = true)
   end
 
