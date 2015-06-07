@@ -72,14 +72,14 @@ type TableOfContent <: AbstractTableOfContent
 end
 
 
-function all_in_one_commonmark(article::Article; depth::Int = 1)
+function commonmark(article::Article; depth::Int = 1)
   blocks = String[
     "#" ^ depth,
     " ",
     node_title(article),
     "\n\n",
   ]
-  content = all_in_one_commonmark(article.dict["BLOC_TEXTUEL"]["CONTENU"])
+  content = commonmark(article.dict["BLOC_TEXTUEL"]["CONTENU"])
   content = join(map(strip, split(content, '\n')), '\n')
   while searchindex(content, "\n\n\n") > 0
     content = replace(content, "\n\n\n", "\n\n")
@@ -89,7 +89,7 @@ function all_in_one_commonmark(article::Article; depth::Int = 1)
   return join(blocks)
 end
 
-# function all_in_one_commonmark(non_article::NonArticle; depth::Int = 1)
+# function commonmark(non_article::NonArticle; depth::Int = 1)
 #   blocks = String[]
 #   if !isempty(non_article.title)
 #     push!(blocks,
@@ -99,7 +99,7 @@ end
 #       "\n\n",
 #     )
 #   end
-#   content = all_in_one_commonmark(non_article.dict["BLOC_TEXTUEL"]["CONTENU"])
+#   content = commonmark(non_article.dict["BLOC_TEXTUEL"]["CONTENU"])
 #   content = join(map(strip, split(content, '\n')), '\n')
 #   while searchindex(content, "\n\n\n") > 0
 #     content = replace(content, "\n\n\n", "\n\n")
@@ -109,25 +109,15 @@ end
 #   return join(blocks)
 # end
 
-function all_in_one_commonmark(section::Section; depth::Int = 1)
-  blocks = String[
-    "#" ^ depth,
-    " ",
-    node_title(section),
-    "\n\n",
-  ]
-  children_infos = [
-    (node_sortable_number(child), name, child)
-    for (name, child) in section.child_by_name
-  ]
-  sort!(children_infos)
-  for (sortable_number, name, child) in children_infos
-    push!(blocks, "- [$(node_title(child))]($name)\n")
-  end
-  return join(blocks)
-end
+commonmark(section::Section; deep::Bool = false, depth::Int = 1) = string(
+  "#" ^ depth,
+  " ",
+  node_title(section),
+  "\n\n",
+  commonmark_children(section; deep = deep, depth = depth),
+)
 
-function all_in_one_commonmark(xhtml_element::XMLElement; depth::Int = 1)
+function commonmark(xhtml_element::XMLElement; depth::Int = 1)
   blocks = String[]
   for xhtml_node in child_nodes(xhtml_element)
     if is_textnode(xhtml_node)
@@ -137,7 +127,7 @@ function all_in_one_commonmark(xhtml_element::XMLElement; depth::Int = 1)
       child_name = name(xhtml_child)
       if child_name == "blockquote"
         push!(blocks, "\n")
-        child_text = all_in_one_commonmark(xhtml_child, depth = depth)
+        child_text = commonmark(xhtml_child, depth = depth)
         push!(blocks, join(map(line -> string("> ", strip(line)), split(strip(child_text), '\n')), '\n'))
         push!(blocks, "\n")
       elseif child_name == "br"
@@ -146,11 +136,32 @@ function all_in_one_commonmark(xhtml_element::XMLElement; depth::Int = 1)
         push!(blocks, string(xhtml_child))
       elseif child_name == "p"
         push!(blocks, "\n\n")
-        push!(blocks, all_in_one_commonmark(xhtml_child, depth = depth))
+        push!(blocks, commonmark(xhtml_child, depth = depth))
         push!(blocks, "\n\n")
       else
         error("Unexpected XHTML element $child_name in:\n$(string(xhtml_element)).")
       end
+    end
+  end
+  return join(blocks)
+end
+
+
+commonmark_children(article::Article; deep::Bool = false, depth::Int = 1, link_prefix::String = "") = ""
+
+function commonmark_children(section::Section; deep::Bool = false, depth::Int = 1, link_prefix::String = "")
+  blocks = String[]
+  children_infos = [
+    (node_sortable_number(child), name, child)
+    for (name, child) in section.child_by_name
+  ]
+  sort!(children_infos)
+  indent = "  " ^ depth
+  for (sortable_number, name, child) in children_infos
+    push!(blocks, "$(indent)- [$(node_title(child))]($link_prefix$name)\n")
+    if deep
+      push!(blocks, commonmark_children(child; deep = deep, depth = depth + 1,
+        link_prefix = string(link_prefix, name, '/')))
     end
   end
   return join(blocks)

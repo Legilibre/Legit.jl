@@ -70,7 +70,7 @@ function main()
   # if get(texte_version, "SIGNATAIRES", nothing) != nothing
   #   push!(articles_tree.children, NonArticle("", texte_version["SIGNATAIRES"]["CONTENU"]))
   # end
-  # print(all_in_one_commonmark(articles_tree))
+  # print(commonmark(articles_tree))
 
   changed_by_changer = @compat Dict{Changer, Changed}()
   root_table_of_content = RootTableOfContent(texte_version, textelr)
@@ -140,7 +140,7 @@ function main()
           end
           return GitTreeBuilder(repository, latest_tree)
         end
-        blob = blob_from_buffer(repository, all_in_one_commonmark(article))
+        blob = blob_from_buffer(repository, commonmark(article))
         insert!(tree_builder, node_filename(article), Oid(blob), int(0o100644))  # FILEMODE_BLOB
 
         nodes = Node[]
@@ -172,15 +172,18 @@ function main()
         end
         for git_dir_names in git_dirs_names_to_build
           tree_builder = pop!(tree_builder_by_git_dir_names, git_dir_names)
-          if length(tree_builder) == 0 || length(tree_builder) == 1 && tree_builder["README.md"] !== nothing
+          if length(tree_builder) == 0 ||
+              args["readme"] != "none" && length(tree_builder) == 1 && tree_builder["README.md"] !== nothing
             tree_oid = nothing
           else
-            section = first(root_section.child_by_name)[2]
-            for dir_name in git_dir_names
-              section = section.child_by_name[dir_name]
+            if args["readme"] != "none"
+              section = first(root_section.child_by_name)[2]
+              for dir_name in git_dir_names
+                section = section.child_by_name[dir_name]
+              end
+              blob = blob_from_buffer(repository, commonmark(section; deep = args["readme"] == "deep"))
+              insert!(tree_builder, "README.md", Oid(blob), int(0o100644))  # FILEMODE_BLOB
             end
-            blob = blob_from_buffer(repository, all_in_one_commonmark(section))
-            insert!(tree_builder, "README.md", Oid(blob), int(0o100644))  # FILEMODE_BLOB
             tree_oid = write!(tree_builder)
           end
           if isempty(git_dir_names)
@@ -227,6 +230,10 @@ function parse_command_line()
     "--dry-run", "-d"
       action = :store_true
       help = "don't write anything"
+    "--readme", "-r"
+      default = "none"
+      help = "don't write anything"
+      range_tester = value -> value in ("deep", "flat", "none")
     "dir"
       help = "path of LEGI dir containing a law"
       required = true
