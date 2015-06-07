@@ -72,7 +72,7 @@ type TableOfContent <: AbstractTableOfContent
 end
 
 
-function commonmark(article::Article; depth::Int = 1)
+function commonmark(article::Article, mode::String; depth::Int = 1)
   blocks = String[
     "#" ^ depth,
     " ",
@@ -89,7 +89,7 @@ function commonmark(article::Article; depth::Int = 1)
   return join(blocks)
 end
 
-# function commonmark(non_article::NonArticle; depth::Int = 1)
+# function commonmark(non_article::NonArticle, mode::String; depth::Int = 1)
 #   blocks = String[]
 #   if !isempty(non_article.title)
 #     push!(blocks,
@@ -109,12 +109,12 @@ end
 #   return join(blocks)
 # end
 
-commonmark(section::Section; deep::Bool = false, depth::Int = 1) = string(
+commonmark(section::Section, mode::String; depth::Int = 1) = string(
   "#" ^ depth,
   " ",
   node_title(section),
-  "\n\n",
-  commonmark_children(section; deep = deep, depth = depth),
+  "\n",
+  commonmark_children(section, mode; depth = depth),
 )
 
 function commonmark(xhtml_element::XMLElement; depth::Int = 1)
@@ -147,21 +147,31 @@ function commonmark(xhtml_element::XMLElement; depth::Int = 1)
 end
 
 
-commonmark_children(article::Article; deep::Bool = false, depth::Int = 1, link_prefix::String = "") = ""
+commonmark_children(article::Article, mode::String; depth::Int = 1, link_prefix::String = "") = ""
 
-function commonmark_children(section::Section; deep::Bool = false, depth::Int = 1, link_prefix::String = "")
-  blocks = String[]
+function commonmark_children(section::Section, mode::String; depth::Int = 1, link_prefix::String = "")
+  blocks = String[
+    "\n",
+  ]
   children_infos = [
     (node_sortable_number(child), name, child)
     for (name, child) in section.child_by_name
   ]
   sort!(children_infos)
-  indent = "  " ^ depth
-  for (sortable_number, name, child) in children_infos
-    push!(blocks, "$(indent)- [$(node_title(child))]($link_prefix$name)\n")
-    if deep
-      push!(blocks, commonmark_children(child; deep = deep, depth = depth + 1,
-        link_prefix = string(link_prefix, name, '/')))
+  if mode == "single-page"
+    for (index, (sortable_number, name, child)) in enumerate(children_infos)
+      if index > 1
+        push!(blocks, "\n")
+      end
+      push!(blocks, commonmark(child, mode; depth = depth + 1))
+    end
+  else
+    indent = "  " ^ depth
+    for (sortable_number, name, child) in children_infos
+      push!(blocks, "$(indent)- [$(node_title(child))]($link_prefix$name)\n")
+      if mode == "deep-readme"
+        push!(blocks, commonmark_children(child, mode; depth = depth + 1, link_prefix = string(link_prefix, name, '/')))
+      end
     end
   end
   return join(blocks)
@@ -201,7 +211,7 @@ node_dir_name(title::String) = slugify(string(split(strip(title))[1], '_', node_
 
 node_filename(article::Article) = string("article_", node_number(article), ".md")
 
-node_filename(table_of_content::AbstractTableOfContent) = "README.md"
+node_filename(node::Node) = node_dir_name(node_title(node)) * ".md"
 
 
 node_git_dir(article::Article) = node_git_dir(article.dict["CONTEXTE"]["TEXTE"]["TM"])

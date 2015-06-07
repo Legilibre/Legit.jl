@@ -28,6 +28,7 @@ include("articles.jl")
 
 function main()
   args = parse_command_line()
+  mode = args["mode"]
 
   if !args["dry-run"]
     @assert splitext(args["repository"])[end] == ".git"
@@ -70,7 +71,7 @@ function main()
   # if get(texte_version, "SIGNATAIRES", nothing) != nothing
   #   push!(articles_tree.children, NonArticle("", texte_version["SIGNATAIRES"]["CONTENU"]))
   # end
-  # print(commonmark(articles_tree))
+  # print(commonmark(articles_tree, mode))
 
   changed_by_changer = @compat Dict{Changer, Changed}()
   root_table_of_content = RootTableOfContent(texte_version, textelr)
@@ -87,23 +88,9 @@ function main()
       author_signature = Signature("République française", "info@data.gouv.fr", epoch, time_offset)
       committer_signature = author_signature
       changed = changed_by_changer[changer]
-      tree_builder_by_git_dir_names = @compat Dict{Tuple, GitTreeBuilder}()
 
+      # Update sections tree.
       for article in changed.deleted_articles
-        git_dir_names = tuple(split(node_git_dir(article), '/')...)
-        tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
-          if root_tree === nothing
-            latest_tree = nothing
-          elseif isempty(git_dir_names)
-            latest_tree = root_tree
-          else
-            entry = entry_bypath(root_tree, join(git_dir_names, '/'))
-            latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
-          end
-          return GitTreeBuilder(repository, latest_tree)
-        end
-        delete!(tree_builder, node_filename(article))
-
         nodes = Node[]
         container = article
         while true
@@ -126,25 +113,9 @@ function main()
           end
         end
       end
-
       for article in changed.articles
-        git_dir_names = tuple(split(node_git_dir(article), '/')...)
-        tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
-          if root_tree === nothing
-            latest_tree = nothing
-          elseif isempty(git_dir_names)
-            latest_tree = root_tree
-          else
-            entry = entry_bypath(root_tree, join(git_dir_names, '/'))
-            latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
-          end
-          return GitTreeBuilder(repository, latest_tree)
-        end
-        blob = blob_from_buffer(repository, commonmark(article))
-        insert!(tree_builder, node_filename(article), Oid(blob), int(0o100644))  # FILEMODE_BLOB
-
         nodes = Node[]
-        container = article
+        container = article.container
         while true
           unshift!(nodes, container)
           if isa(container, RootTableOfContent)
@@ -159,54 +130,98 @@ function main()
           end
           section.title = node_title(node)
         end
+        section.child_by_name[node_name(article)] = article
       end
 
-      root_tree_oid = nothing
-      while !isempty(tree_builder_by_git_dir_names)
-        git_dirs_names_to_build = Set(keys(tree_builder_by_git_dir_names))
-        for (git_dir_names, tree_builder) in tree_builder_by_git_dir_names
-          while !isempty(git_dir_names)
-            git_dir_names = git_dir_names[1 : end - 1]
-            pop!(git_dirs_names_to_build, git_dir_names, nothing)
-          end
-        end
-        for git_dir_names in git_dirs_names_to_build
-          tree_builder = pop!(tree_builder_by_git_dir_names, git_dir_names)
-          if length(tree_builder) == 0 ||
-              args["readme"] != "none" && length(tree_builder) == 1 && tree_builder["README.md"] !== nothing
-            tree_oid = nothing
-          else
-            if args["readme"] != "none"
-              section = first(root_section.child_by_name)[2]
-              for dir_name in git_dir_names
-                section = section.child_by_name[dir_name]
-              end
-              blob = blob_from_buffer(repository, commonmark(section; deep = args["readme"] == "deep"))
-              insert!(tree_builder, "README.md", Oid(blob), int(0o100644))  # FILEMODE_BLOB
-            end
-            tree_oid = write!(tree_builder)
-          end
-          if isempty(git_dir_names)
-            root_tree_oid = tree_oid
-          else
-            dir_name = git_dir_names[end]
-            git_dir_names = git_dir_names[1 : end - 1]
-            @assert !(git_dir_names in git_dirs_names_to_build)
-            tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
-              if root_tree === nothing
-                latest_tree = nothing
-              elseif isempty(git_dir_names)
-                latest_tree = root_tree
-              else
-                entry = entry_bypath(root_tree, join(git_dir_names, '/'))
-                latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
-              end
-              return GitTreeBuilder(repository, latest_tree)
-            end
-            if tree_oid === nothing
-              delete!(tree_builder, dir_name)
+      if mode == "single-page"
+        root_tree_builder = GitTreeBuilder(repository, root_tree)
+        single_section = first(root_section.child_by_name)[2]
+        blob = blob_from_buffer(repository, commonmark(single_section, mode))
+        insert!(root_tree_builder, node_filename(single_section), Oid(blob), int(0o100644))  # FILEMODE_BLOB
+        root_tree_oid = write!(root_tree_builder)
+      else
+        tree_builder_by_git_dir_names = @compat Dict{Tuple, GitTreeBuilder}()
+
+        for article in changed.deleted_articles
+          git_dir_names = tuple(split(node_git_dir(article), '/')...)
+          tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
+            if root_tree === nothing
+              latest_tree = nothing
+            elseif isempty(git_dir_names)
+              latest_tree = root_tree
             else
-              insert!(tree_builder, dir_name, tree_oid, int(0o40000))  # FILEMODE_TREE
+              entry = entry_bypath(root_tree, join(git_dir_names, '/'))
+              latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
+            end
+            return GitTreeBuilder(repository, latest_tree)
+          end
+          delete!(tree_builder, node_filename(article))
+        end
+
+        for article in changed.articles
+          git_dir_names = tuple(split(node_git_dir(article), '/')...)
+          tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
+            if root_tree === nothing
+              latest_tree = nothing
+            elseif isempty(git_dir_names)
+              latest_tree = root_tree
+            else
+              entry = entry_bypath(root_tree, join(git_dir_names, '/'))
+              latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
+            end
+            return GitTreeBuilder(repository, latest_tree)
+          end
+          blob = blob_from_buffer(repository, commonmark(article, mode))
+          insert!(tree_builder, node_filename(article), Oid(blob), int(0o100644))  # FILEMODE_BLOB
+        end
+
+        root_tree_oid = nothing
+        while !isempty(tree_builder_by_git_dir_names)
+          git_dirs_names_to_build = Set(keys(tree_builder_by_git_dir_names))
+          for (git_dir_names, tree_builder) in tree_builder_by_git_dir_names
+            while !isempty(git_dir_names)
+              git_dir_names = git_dir_names[1 : end - 1]
+              pop!(git_dirs_names_to_build, git_dir_names, nothing)
+            end
+          end
+          for git_dir_names in git_dirs_names_to_build
+            tree_builder = pop!(tree_builder_by_git_dir_names, git_dir_names)
+            if length(tree_builder) == 0 || mode in ("deep-readme", "flat-readme") && length(tree_builder) == 1 &&
+                tree_builder["README.md"] !== nothing
+              tree_oid = nothing
+            else
+              if mode in ("deep-readme", "flat-readme")
+                section = first(root_section.child_by_name)[2]
+                for dir_name in git_dir_names
+                  section = section.child_by_name[dir_name]
+                end
+                blob = blob_from_buffer(repository, commonmark(section, mode))
+                insert!(tree_builder, "README.md", Oid(blob), int(0o100644))  # FILEMODE_BLOB
+              end
+              tree_oid = write!(tree_builder)
+            end
+            if isempty(git_dir_names)
+              root_tree_oid = tree_oid
+            else
+              dir_name = git_dir_names[end]
+              git_dir_names = git_dir_names[1 : end - 1]
+              @assert !(git_dir_names in git_dirs_names_to_build)
+              tree_builder = get!(tree_builder_by_git_dir_names, git_dir_names) do
+                if root_tree === nothing
+                  latest_tree = nothing
+                elseif isempty(git_dir_names)
+                  latest_tree = root_tree
+                else
+                  entry = entry_bypath(root_tree, join(git_dir_names, '/'))
+                  latest_tree = entry === nothing ? nothing : lookup_tree(repository, Oid(entry))
+                end
+                return GitTreeBuilder(repository, latest_tree)
+              end
+              if tree_oid === nothing
+                delete!(tree_builder, dir_name)
+              else
+                insert!(tree_builder, dir_name, tree_oid, int(0o40000))  # FILEMODE_TREE
+              end
             end
           end
         end
@@ -230,10 +245,10 @@ function parse_command_line()
     "--dry-run", "-d"
       action = :store_true
       help = "don't write anything"
-    "--readme", "-r"
-      default = "none"
-      help = "don't write anything"
-      range_tester = value -> value in ("deep", "flat", "none")
+    "--mode", "-m"
+      default = "flat-readme"
+      help = "mode for generated tree of files (deep-readme, flat-readme, no-readme, single-page)"
+      range_tester = value -> value in ("deep-readme", "flat-readme", "no-readme", "single-page")
     "dir"
       help = "path of LEGI dir containing a law"
       required = true
