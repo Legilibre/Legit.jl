@@ -56,6 +56,16 @@ type RootTableOfContent <: AbstractTableOfContent
 end
 
 
+type Section <: Node
+  title::String
+  child_by_name::Dict{String, Node}
+
+  Section(title::String) = new(title, @compat Dict{String, Node}())
+end
+
+Section() = Section("")
+
+
 type TableOfContent <: AbstractTableOfContent
   container::AbstractTableOfContent
   dict::Dict  # Dict{String, Any}
@@ -98,6 +108,24 @@ end
 #   push!(blocks, "\n\n")
 #   return join(blocks)
 # end
+
+function all_in_one_commonmark(section::Section; depth::Int = 1)
+  blocks = String[
+    "#" ^ depth,
+    " ",
+    node_title(section),
+    "\n\n",
+  ]
+  children_infos = [
+    (node_sortable_number(child), name, child)
+    for (name, child) in section.child_by_name
+  ]
+  sort!(children_infos)
+  for (sortable_number, name, child) in children_infos
+    push!(blocks, "- [$(node_title(child))]($name)\n")
+  end
+  return join(blocks)
+end
 
 function all_in_one_commonmark(xhtml_element::XMLElement; depth::Int = 1)
   blocks = String[]
@@ -179,15 +207,30 @@ node_git_dir(table_of_content::TableOfContent) = lstrip(
   string(node_git_dir(table_of_content.container), '/', node_dir_name(table_of_content)), '/')
 
 
+node_name(table_of_content::AbstractTableOfContent) = node_dir_name(table_of_content)
+
+node_name(article::Article) = node_filename(article)
+
+
+node_number(table_of_content::AbstractTableOfContent) = node_number(node_title(table_of_content))
+
 node_number(article::Article) = article.dict["META"]["META_SPEC"]["META_ARTICLE"]["NUM"]
 
-node_number(table_of_content::TableOfContent) = node_number(node_title(table_of_content))
+node_number(section::Section) = node_number(node_title(section))
 
 function node_number(title::String)
   number_fragments = String[]
   for fragment in split(strip(title))[2:end]
-    if isdigit(fragment) || lowercase(fragment) == "ier" || ismatch(r"^[ivxlcdm]+$", lowercase(fragment)) ||
-        fragment in keys(number_by_latin_extension) || isempty(number_fragments)
+    fragment_lower =  lowercase(fragment)
+    if fragment_lower == "n°"
+      continue
+    end
+    if startswith(fragment_lower, "n°")
+      fragment = fragment[3:end]
+      fragment_lower = fragment_lower[3:end]
+    end
+    if isdigit(fragment) || fragment_lower == "ier" || ismatch(r"^[ivxlcdm]+$",fragment_lower) ||
+        fragment_lower in keys(number_by_latin_extension) || isempty(number_fragments)
       push!(number_fragments, fragment)
     else
       break
@@ -202,8 +245,8 @@ function node_sortable_number(node::Node)
   slug = slugify(node_number(node); separator = '_')
   for fragment in split(slug, '_')
     if isdigit(fragment)
-      @assert len(fragment) <= 3
-      push!(number_fragments, ("000" * fragment)[end - 3: end])
+      @assert length(fragment) <= 3
+      push!(number_fragments, ("000" * fragment)[end - 2 : end])
     elseif fragment == "ier"
       push!(number_fragments, "001")
     elseif ismatch(r"^[ivxlcdm]+$", fragment)
@@ -225,7 +268,7 @@ function node_sortable_number(node::Node)
         end
       end
       @assert value < 1000
-      push!(number_fragments, string("000", value)[end - 3: end])
+      push!(number_fragments, string("000", value)[end - 2 : end])
     else
       number = get(number_by_latin_extension, fragment, "")
       @assert !isempty(number) "Invalid number: $fragment."
@@ -242,6 +285,8 @@ node_structure(table_of_content::TableOfContent) = table_of_content.dict["STRUCT
 
 
 node_title(article::Article) = string("Article ", node_number(article))
+
+node_title(section::Section) = section.title
 
 node_title(table_of_content::RootTableOfContent) = table_of_content.texte_version["META"]["META_SPEC"][
   "META_TEXTE_VERSION"]["TITREFULL"]
