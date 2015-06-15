@@ -4,7 +4,7 @@
 # Copyright (C) 2015 Etalab
 # https://github.com/etalab/Legit.jl
 #
-# The GitLegistique.jl package is licensed under the MIT "Expat" License.
+# The Legit.jl package is licensed under the MIT "Expat" License.
 
 
 empty_element_to_nothing = @compat pipe(
@@ -39,7 +39,7 @@ extract_singleton = pipe(
 validate_cid = pipe(
   test_isa(String),
   empty_to_nothing,
-  test(cid -> ismatch(r"^(JORF|LEGI)(SCTA|TEXT)\d{12}$", cid); error = N_("Invalid CID.")),
+  test(cid -> ismatch(r"^(JORF|KALI|LEGI)(SCTA|TEXT)\d{12}$", cid); error = N_("Invalid CID.")),
 )
 
 
@@ -47,7 +47,29 @@ validate_date = pipe(
   test_isa(String),
   empty_to_nothing,
   condition(
+    test_equal(nothing),
+    noop,
+    test_equal("0003-05-19"),
+    from_value(Date(1993, 5, 19)),
+    test_equal("0881-10-09"),
+    from_value(Date(1981, 10, 9)),
+    test_equal("0958-09-10"),
+    from_value(Date(1958, 9, 10)),
+    test_equal("0988-11-30"),
+    from_value(Date(1988, 11, 30)),
+    test_equal("1006-06-21"),
+    from_value(Date(2006, 6, 21)),
+    test_equal("1192-10-19"),
+    from_value(Date(1992, 10, 19)),
+    test_equal("1193-03-24"),
+    from_value(Date(1993, 3, 24)),
+    test_equal("2222-02-02"),
+    from_value(Date(2222, 2, 2)),
+    test_equal("2222-02-22"),
+    from_value(Date(2222, 2, 22)),
     test_equal("2999-01-01"),
+    from_value(nothing),
+    test_equal("5820-10-01"),
     from_value(nothing),
     iso8601_string_to_date,
   ),
@@ -57,14 +79,15 @@ validate_date = pipe(
 validate_etat = pipe(
   test_isa(String),
   empty_to_nothing,
-  test_in(["ABROGE", "MODIFIE", "VIGUEUR"]),
+  test_in(["ABROGE", "ABROGE_DIFF", "ANNULE", "DISJOINT", "MODIFIE", "MODIFIE_MORT_NE", "PERIME", "TRANSFERE",
+    "VIGUEUR", "VIGUEUR_DIFF"]),
 )
 
 
 validate_id = pipe(
   test_isa(String),
   empty_to_nothing,
-  test(id -> ismatch(r"^(JORF|LEGI)(ARTI|SCTA|TEXT)\d{12}$", id); error = N_("Invalid ID.")),
+  test(id -> ismatch(r"^(JORF|KALI|LEGI)(ARTI|CONT|SCTA|TEXT)\d{12}$", id); error = N_("Invalid ID.")),
 )
 
 
@@ -78,7 +101,10 @@ validate_ministere = pipe(
 validate_nature = pipe(
   test_isa(String),
   empty_to_nothing,
-  test_in(["ARRETE", "Article", "CODE", "DECRET", "LOI", "ORDONNANCE"]),
+  test_in(["ARRETE", "ARRETEEURO", "Article", "AVIS", "CIRCULAIRE", "CODE", "CONSTITUTION", "CONVENTION", "DECISION",
+    "DECISION_EURO", "DECLARATION", "DECRET", "DECRETEURO", "DECRET_LOI", "DELIBERATION", "DIRECTIVE_EURO",
+    "INSTRUCTION", "INSTRUCTIONEURO", "LOI", "LOI_CONSTIT", "LOI_ORGANIQUE", "LOI_PROGRAMME", "ORDONNANCE", "RAPPORT",
+    "REGLEMENTEUROPEEN"]),
 )
 
 
@@ -138,43 +164,34 @@ element_singleton_to_text = pipe(
 )
 
 
-elements_array_to_liens_articles = @compat pipe(
-  test_isa(Array),
-  uniform_sequence(
-    pipe(
-      test_isa(Dict),
-      struct(
-        Dict{String, Any}(
-          "^tail" => pipe(
-            test_isa(String),
-            strip,
-            test_nothing,
-          ),
-          "^text" => pipe(
-            test_isa(String),
-            strip,
-            test_nothing,
-          ),
-          "@debut" => validate_date,
-          "@etat" => validate_etat,
-          "@fin" => validate_date,
-          "@id" => pipe(
-            validate_id,
-            require,
-          ),
-          "@num" => pipe(
-            validate_num,
-            require,
-          ),
-          "@origine" => pipe(
-            validate_origine,
-            require,
-          ),
-        ),
-        drop_nothing = true,
+element_to_lien_article = @compat pipe(
+  test_isa(Dict),
+  struct(
+    Dict{String, Any}(
+      "^tail" => pipe(
+        test_isa(String),
+        strip,
+        test_nothing,
       ),
-      require,
+      "^text" => pipe(
+        test_isa(String),
+        strip,
+        test_nothing,
+      ),
+      "@debut" => validate_date,
+      "@etat" => validate_etat,
+      "@fin" => validate_date,
+      "@id" => pipe(
+        validate_id,
+        require,
+      ),
+      "@num" => validate_num,
+      "@origine" => pipe(
+        validate_origine,
+        require,
+      ),
     ),
+    drop_nothing = true,
   ),
 )
 
@@ -197,31 +214,36 @@ function element_singleton_to_tm()
           test_nothing,
         ),
         "TITRE_TM" => pipe(
-          extract_singleton,
-          test_isa(Dict),
-          struct(
-            Dict{String, Any}(
-              "^tail" => pipe(
-                test_isa(String),
-                strip,
-                test_nothing,
+          test_isa(Array),
+          uniform_sequence(
+            pipe(
+              test_isa(Dict),
+              struct(
+                Dict{String, Any}(
+                  "^tail" => pipe(
+                    test_isa(String),
+                    strip,
+                    test_nothing,
+                  ),
+                  "^text" => pipe(
+                    test_isa(String),
+                    strip,
+                    require,
+                  ),
+                  "@debut" => pipe(
+                    validate_date,
+                    require,
+                  ),
+                  "@fin" => validate_date,
+                  "@id" => pipe(
+                    validate_id,
+                    require,
+                  ),
+                ),
+                drop_nothing = true,
               ),
-              "^text" => pipe(
-                test_isa(String),
-                strip,
-                require,
-              ),
-              "@debut" => pipe(
-                validate_date,
-                require,
-              ),
-              "@fin" => validate_date,
-              "@id" => pipe(
-                validate_id,
-                require,
-              ),
+              require,
             ),
-            drop_nothing = true,
           ),
           require,
         ),
@@ -272,24 +294,15 @@ element_singleton_to_contexte = @compat pipe(
               validate_cid,
               require,
             ),
-            "@date_publi" => pipe(
-              validate_date,
-              require,
-            ),
-            "@date_signature" => pipe(
-              validate_date,
-              require,
-            ),
+            "@date_publi" => validate_date,
+            "@date_signature" => validate_date,
             "@ministere" => validate_ministere,
             "@nature" => pipe(
               validate_nature,
               require,
             ),
             "@nor" => validate_nor,
-            "@num" => pipe(
-              validate_num,
-              require,
-            ),
+            "@num" => validate_num,
             "TITRE_TXT" => pipe(
               test_isa(Array),
               uniform_sequence(
@@ -369,7 +382,6 @@ element_singleton_to_liens = @compat pipe(
                   test_isa(String),
                   call(text -> join(split(text), " ")),
                   empty_to_nothing,
-                  require,
                 ),
                 "@cidtexte" => validate_cid,
                 "@datesignatexte" => validate_date,
@@ -387,8 +399,11 @@ element_singleton_to_liens = @compat pipe(
                 "@typelien" => pipe(
                   test_isa(String),
                   empty_to_nothing,
-                  test_in(["ABROGATION", "ABROGE", "CITATION", "CONCORDANCE", "CONCORDE", "CREATION", "CREE",
-                    "MODIFICATION", "MODIFIE", "SPEC_APPLI", "TXT_SOURCE"]),
+                  test_in(["ABROGATION", "ABROGE", "ANNULATION", "ANNULE", "APPLICATION", "CITATION", "CODIFICATION",
+                    "CODIFIE", "CONCORDANCE", "CONCORDE", "CREATION", "CREE", "DEPLACE", "DEPLACEMENT", "DISJOINT",
+                    "DISJONCTION", "HISTO", "MODIFICATION", "MODIFIE", "PEREMPTION", "PERIME", "PILOTE_SUIVEUR",
+                    "RATIFICATION", "RATIFIE", "RECTIFICATION", "SPEC_APPLI", "SUBSTITUTION", "TRANSFERE", "TRANSFERT",
+                    "TRANSPOSITION", "TXT_ASSOCIE", "TXT_SOURCE"]),
                   require,
                 ),
               ),
@@ -428,7 +443,6 @@ element_singleton_to_meta_commun = @compat pipe(
       "NATURE" => pipe(
         element_singleton_to_text,
         validate_nature,
-        require,
       ),
       "ORIGINE" => pipe(
         element_singleton_to_text,
@@ -473,12 +487,10 @@ element_singleton_to_meta_texte_chronicle = @compat pipe(
       "DATE_TEXTE" => pipe(
         element_singleton_to_text,
         validate_date,
-        require,
       ),
       "DERNIERE_MODIFICATION" => pipe(
         element_singleton_to_text,
         validate_date,
-        require,
       ),
       "NOR" => pipe(
         element_singleton_to_text,
@@ -487,13 +499,11 @@ element_singleton_to_meta_texte_chronicle = @compat pipe(
       "NUM" => pipe(
         element_singleton_to_text,
         validate_num,
-        require,
       ),
       "NUM_SEQUENCE" => pipe(
         element_singleton_to_text,
         input_to_int,
         test_greater_or_equal(0),  # 0 means nothing.
-        require,
       ),
       "ORIGINE_PUBLI" => pipe(
         element_singleton_to_text,
@@ -503,17 +513,41 @@ element_singleton_to_meta_texte_chronicle = @compat pipe(
         element_singleton_to_text,
         input_to_int,
         test_greater_or_equal(0),  # 0 means nothing.
-        require,
       ),
       "PAGE_FIN_PUBLI" => pipe(
         element_singleton_to_text,
         input_to_int,
         test_greater_or_equal(0),  # 0 means nothing.
-        require,
       ),
       "VERSIONS_A_VENIR" => pipe(
         extract_singleton,
-        empty_element_to_nothing,
+        test_isa(Dict),
+        struct(
+          Dict{String, Any}(
+            "^tail" => pipe(
+              test_isa(String),
+              strip,
+              test_nothing,
+            ),
+            "^text" => pipe(
+              test_isa(String),
+              strip,
+              test_nothing,
+            ),
+            "VERSION_A_VENIR" => pipe(
+              test_isa(Array),
+              uniform_sequence(
+                pipe(
+                  element_to_text,
+                  validate_date,
+                  require,
+                ),
+              ),
+              empty_to_nothing,
+            ),
+          ),
+          drop_nothing = true,
+        ),
       ),
     ),
     drop_nothing = true,
@@ -558,7 +592,24 @@ element_singleton_to_structure = @compat pipe(
         strip,
         test_nothing,
       ),
-      "LIEN_ART" => elements_array_to_liens_articles,
+      "LIEN_ART" => pipe(
+        test_isa(Array),
+        uniform_sequence(
+          pipe(
+            element_to_lien_article,
+            require,
+          ),
+        ),
+        call(links -> sort!(links; by = link -> begin
+          start_date = get(link, "@debut") do
+            return Date(2999, 1, 1)
+          end
+          stop_date = get(link, "@fin") do
+            return Date(2999, 1, 1)
+          end
+          return (get(link, "@num", ""), min(start_date, stop_date), stop_date, link["@id"])
+        end)),
+      ),
       "LIEN_SECTION_TA" => pipe(
         test_isa(Array),
         uniform_sequence(
@@ -580,10 +631,7 @@ element_singleton_to_structure = @compat pipe(
                   validate_cid,
                   require,
                 ),
-                "@debut" => pipe(
-                  validate_date,
-                  require,
-                ),
+                "@debut" => validate_date,
                 "@etat" => validate_etat,
                 "@fin" => validate_date,
                 "@id" => pipe(
@@ -593,7 +641,7 @@ element_singleton_to_structure = @compat pipe(
                 "@niv" => pipe(
                   test_isa(String),
                   input_to_int,
-                  test_between(1, 2),
+                  test_between(1, 13),
                   require,
                 ),
                 "@url" => pipe(
@@ -646,7 +694,10 @@ element_singleton_to_versions = @compat pipe(
                   test_nothing,
                 ),
                 "@etat" => validate_etat,
-                "LIEN_ART" => elements_array_to_liens_articles,
+                "LIEN_ART" => pipe(
+                  extract_singleton,
+                  element_to_lien_article,
+                ),
                 "LIEN_TXT" => pipe(
                   extract_singleton,
                   test_isa(Dict),
@@ -668,10 +719,7 @@ element_singleton_to_versions = @compat pipe(
                         validate_id,
                         require,
                       ),
-                      "@num" => pipe(
-                        validate_num,
-                        require,
-                      ),
+                      "@num" => validate_num,
                     ),
                     drop_nothing = true,
                   ),
@@ -682,6 +730,18 @@ element_singleton_to_versions = @compat pipe(
             require,
           ),
         ),
+        call(versions -> sort!(versions; by = version -> begin
+          link = get(version, "LIEN_ART") do
+            return version["LIEN_TXT"]
+          end
+          start_date = get(link, "@debut") do
+            return Date(2999, 1, 1)
+          end
+          stop_date = get(link, "@fin") do
+            return Date(2999, 1, 1)
+          end
+          return (min(start_date, stop_date), link["@id"])
+        end)),
         require,
       ),
     ),
@@ -806,7 +866,6 @@ element_to_article = @compat pipe(
                         "TYPE" => pipe(
                           element_singleton_to_text,
                           test_in(["AUTONOME", "ENTIEREMENT_MODIF", "PARTIELLEMENT_MODIF"]),
-                          require,
                         ),
                       ),
                       drop_nothing = true,
@@ -850,6 +909,10 @@ element_to_section_ta = @compat pipe(
         test_isa(String),
         strip,
         test_nothing,
+      ),
+      "COMMENTAIRE" => pipe(
+        element_singleton_to_text,
+        empty_to_nothing,
       ),
       "CONTEXTE" => pipe(
         element_singleton_to_contexte,
@@ -970,7 +1033,6 @@ element_to_texte_version = @compat pipe(
                         "DATE_DEBUT" => pipe(
                           element_singleton_to_text,
                           validate_date,
-                          require,
                         ),
                         "DATE_FIN" => pipe(
                           element_singleton_to_text,
