@@ -28,6 +28,7 @@ include("articles.jl")
 function main()
   args = parse_command_line()
   mode = args["mode"]
+  readme_mode = args["readme"]
 
   if !args["dry-run"]
     @assert splitext(args["repository"])[end] == ".git"
@@ -43,10 +44,22 @@ function main()
   end
 
   latest_commit = nothing
-  node_by_nature = @compat Dict{String, Nature}()
-  root_section = Section()
+  if mode == "all"
+    documents_dir_walker = @task walk_documents_dir(joinpath(args["legi_dir"], "global"))
+    node_by_nature = @compat Dict{String, Nature}()
+    root_title = "Lois et règlements français"
+  else
+    @assert mode == "codes"
+    documents_dir_walker = @task walk_documents_dir(
+      joinpath(args["legi_dir"], "global", "code_et_TNC_en_vigueur", "code_en_vigueur"),
+      joinpath(args["legi_dir"], "global", "code_et_TNC_non_vigueur", "code_non_vigueur"),
+    )
+    root_title = "Codes juridiques français"
+  end
+  root_node = RootNode(root_title)
+  root_section = Section(root_node.title)
   root_tree = nothing
-  for (document_index, document_dir) in enumerate(@task walk_documents_dir(args["legi_dir"]))
+  for (document_index, document_dir) in enumerate(documents_dir_walker)
     # document_index < 96802 && continue  # TODO: Remove.
 println()
 println()
@@ -68,6 +81,7 @@ println(document_index, " / ", document_dir)
         element_to_texte_version,
         require,
       ) |> to_value
+      free(version_xml_document)
 
       @assert(version_filename == struct_filename,
         "Filenames for struct and version differ: $struct_filename != $version_filename.")
@@ -76,6 +90,7 @@ println(document_index, " / ", document_dir)
         element_to_textelr,
         require,
       ) |> to_value
+      free(struct_xml_document)
 
       # articles_tree = parse_structure(changed_by_changer, document_dir, textelr["STRUCT"],
       #   texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITREFULL"])
@@ -85,16 +100,22 @@ println(document_index, " / ", document_dir)
       # if get(texte_version, "SIGNATAIRES", nothing) != nothing
       #   push!(articles_tree.children, NonArticle("", texte_version["SIGNATAIRES"]["CONTENU"]))
       # end
-      # print(commonmark(articles_tree, mode))
-      nature = get(texte_version["META"]["META_COMMUN"], "NATURE", "nature_inconnue")
-      nature_node = get!(node_by_nature, nature) do
-        return Nature(nature)
+      # print(commonmark(articles_tree, readme_mode))
+
+      if mode == "all"
+        nature = get(texte_version["META"]["META_COMMUN"], "NATURE", "nature_inconnue")
+        document_container = get!(node_by_nature, nature) do
+          return Nature(root_node, nature)
+        end
+      else
+        @assert mode == "codes"
+        document_container = root_node
       end
-      document = Document(nature_node, texte_version, textelr)
+      document = Document(document_container, texte_version, textelr)
 @show node_title(document)
 println("=============================================================================================================")
 println()
-      parse_structure(articles_by_id, changed_by_message_by_date, document_dir, document)
+      parse_structure(document, articles_by_id, changed_by_message_by_date, document_dir)
     end
     link_articles(articles_by_id)
     dates = sort(collect(keys(changed_by_message_by_date)))
@@ -124,10 +145,10 @@ println("Upserted: ", string(node_id(article), " ", node_git_file_path(article))
             container = article.container
             while true
               unshift!(nodes, container)
-              if isa(container, Nature)
+              container = container.container
+              if isa(container, RootNode)
                 break
               end
-              container = container.container
             end
             section = root_section
             for node in nodes
@@ -152,10 +173,10 @@ println("Deleted: ", string(node_id(article), " ", node_git_file_path(article)))
             container = article
             while true
               unshift!(nodes, container)
-              if isa(container, Nature)
+              container = container.container
+              if isa(container, RootNode)
                 break
               end
-              container = container.container
             end
             section = root_section
             sections = Node[]
@@ -179,11 +200,11 @@ println("Deleted: ", string(node_id(article), " ", node_git_file_path(article)))
             end
           end
 
-          if mode == "single-page"
+          if readme_mode == "single-page"
             root_tree_builder = GitTreeBuilder(repository, root_tree)
             single_section = first(first(root_section.child_by_name)[2].child_by_name)[2]
             single_section_filename = node_filename(single_section)
-            blob = blob_from_buffer(repository, commonmark(single_section, mode))
+            blob = blob_from_buffer(repository, commonmark(single_section, readme_mode))
             blob_id = Oid(blob)
             entry = root_tree_builder[single_section_filename]
             if entry === nothing || Oid(entry) != blob_id
@@ -208,7 +229,7 @@ println("Deleted: ", string(node_id(article), " ", node_git_file_path(article)))
                 return GitTreeBuilder(repository, latest_tree)
               end
               article_filename = node_filename(article)
-              blob = blob_from_buffer(repository, commonmark(article, mode))
+              blob = blob_from_buffer(repository, commonmark(article, readme_mode))
               blob_id = Oid(blob)
               entry = tree_builder[article_filename]
               if entry === nothing || Oid(entry) != blob_id
@@ -250,16 +271,16 @@ println("Deleted: ", string(node_id(article), " ", node_git_file_path(article)))
                 end
                 for git_dir_names in git_dirs_names_to_build
                   tree_builder = pop!(tree_builder_by_git_dir_names, git_dir_names)
-                  if length(tree_builder) == 0 || mode in ("deep-readme", "flat-readme") && length(tree_builder) == 1 &&
+                  if length(tree_builder) == 0 || readme_mode in ("deep", "flat") && length(tree_builder) == 1 &&
                       tree_builder["README.md"] !== nothing
                     tree_oid = nothing
                   else
-                    if mode in ("deep-readme", "flat-readme")
+                    if readme_mode in ("deep", "flat")
                       section = root_section
                       for dir_name in git_dir_names
                         section = section.child_by_name[dir_name]
                       end
-                      blob = blob_from_buffer(repository, commonmark(section, mode))
+                      blob = blob_from_buffer(repository, commonmark(section, readme_mode))
                       insert!(tree_builder, "README.md", Oid(blob), int(0o100644))  # FILEMODE_BLOB
                     end
                     tree_oid = write!(tree_builder)
@@ -314,9 +335,13 @@ function parse_command_line()
       action = :store_true
       help = "don't write anything"
     "--mode", "-m"
-      default = "flat-readme"
-      help = "mode for generated tree of files (deep-readme, flat-readme, no-readme, single-page)"
-      range_tester = value -> value in ("deep-readme", "flat-readme", "no-readme", "single-page")
+      default = "all"
+      help = "mode for generated tree of files in Git repository (all, codes)"
+      range_tester = value -> value in ("all", "codes")
+    "--readme", "-r"
+      default = "flat"
+      help = "mode for README file (deep, flat, none, single-page)"
+      range_tester = value -> value in ("deep", "flat", "none", "single-page")
     "--verbose", "-v"
       action = :store_true
       help = "increase output verbosity"
@@ -346,6 +371,12 @@ function walk_documents_dir(dir::String)
   if texte_version_files_found
     document_dir = dirname(dirname(dir))
     produce(document_dir)
+  end
+end
+
+function walk_documents_dir(dirs::String...)
+  for dir in dirs
+    walk_documents_dir(dir)
   end
 end
 

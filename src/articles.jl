@@ -68,17 +68,22 @@ abstract Node
 abstract AbstractTableOfContent <: Node
 
 
+type RootNode <: Node
+  title::String
+end
+
+
 @compat type Article <: Node
   container::AbstractTableOfContent
-  date_debut::Union(Date, Nothing)
-  date_fin::Union(Date, Nothing)
+  start_date::Union(Date, Nothing)
+  stop_date::Union(Date, Nothing)
   dict::Dict  # Dict{String, Any}
   next_version::Nullable{Article}  # Next version of the same article (may have the same ID)
 
 end
 
-Article(container::AbstractTableOfContent, date_debut::Union(Date, Nothing), date_fin::Union(Date, Nothing),
-  dict::Dict) = @compat Article(container, date_debut, date_fin, dict, Nullable{Article}())
+Article(container::AbstractTableOfContent, start_date::Union(Date, Nothing), stop_date::Union(Date, Nothing),
+  dict::Dict) = @compat Article(container, start_date, stop_date, dict, Nullable{Article}())
 
 
 type Changed
@@ -90,13 +95,14 @@ end
 
 
 type Document <: AbstractTableOfContent
-  container::Node  # TODO: Nature or Section
+  container::Node  # TODO: Nature or RootNode or Section
   texte_version::Dict  # Dict{String, Any}
   textelr::Dict  # Dict{String, Any}
 end
 
 
 type Nature <: Node
+  container::RootNode
   title::String
 end
 
@@ -115,13 +121,15 @@ type Section <: Node
   Section(sortable_title::String, title::String) = new(sortable_title, title, @compat Dict{String, Node}())
 end
 
+Section(title::String) = Section(title, title)
+
 Section() = Section("", "")
 
 
 type TableOfContent <: AbstractTableOfContent
   container::AbstractTableOfContent
-  date_debut::Union(Date, Nothing)
-  date_fin::Union(Date, Nothing)
+  start_date::Union(Date, Nothing)
+  stop_date::Union(Date, Nothing)
   dict::Dict  # Dict{String, Any}
 end
 
@@ -244,10 +252,10 @@ function commonmark_children(section::Section, mode::String; depth::Int = 1, lin
       push!(blocks, commonmark(child, mode; depth = depth + 1))
     end
   else
-    indent = "  " ^ depth
+    indent = "  " ^ (depth - 1)
     for (sortable_number, name, child) in children_infos
       push!(blocks, "$(indent)- [$(node_title(child))]($link_prefix$name)\n")
-      if mode == "deep-readme"
+      if mode == "deep"
         push!(blocks, commonmark_children(child, mode; depth = depth + 1, link_prefix = string(link_prefix, name, '/')))
       end
     end
@@ -344,6 +352,7 @@ function load_article(dir::String, id::String)
     element_to_article,
     require,
   ) |> to_value
+  free(article_xml_document)
 end
 
 
@@ -378,15 +387,15 @@ node_filename(article::Article) = string("article_", slugify(node_number(article
 node_filename(node::Node) = node_dir_name(node) * ".md"
 
 
-function node_git_dir(table_of_content::AbstractTableOfContent)
-  container_git_dir = node_git_dir(table_of_content.container)
-  dir_name = node_dir_name(table_of_content)
-  return isempty(container_git_dir) ? dir_name : string(container_git_dir, '/', dir_name)
-end
-
 node_git_dir(article::Article) = node_git_dir(article.container)
 
-node_git_dir(nature::Nature) = node_dir_name(nature)
+node_git_dir(::RootNode) = ""
+
+function node_git_dir(node::Node)
+  container_git_dir = node_git_dir(node.container)
+  dir_name = node_dir_name(node)
+  return isempty(container_git_dir) ? dir_name : string(container_git_dir, '/', dir_name)
+end
 
 
 node_git_file_path(node::Node) = string(node_git_dir(node), '/', node_filename(node))
@@ -462,7 +471,8 @@ end
 
 node_sortable_title(article::Article) = node_sortable_title(node_number(article), node_title_short(article))
 
-node_sortable_title(document::Document) = slugify(document.container.title) == "code" ? node_title_short(document) :
+node_sortable_title(document::Document) = get(document.texte_version["META"]["META_COMMUN"], "NATURE", "") == "CODE" ?
+  node_title_short(document) :
   node_sortable_title(node_number_and_simple_title(document)...)
 
 node_sortable_title(nature::Nature) = node_title_short(nature)
@@ -546,19 +556,19 @@ function node_sortable_title(number::String, simple_title::String)
 end
 
 
-node_start_date(article::Article) = article.date_debut
+node_start_date(article::Article) = article.start_date
 
 node_start_date(document::Document) = get(document.texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"],
   "DATE_DEBUT", nothing)
 
-node_start_date(table_of_content::TableOfContent) = table_of_content.date_debut
+node_start_date(table_of_content::TableOfContent) = table_of_content.start_date
 
 
 function node_stop_date(node::Union(Article, TableOfContent))
-  stop_date = node.date_fin
-  if stop_date !== nothing && stop_date < node.date_debut
+  stop_date = node.stop_date
+  if stop_date !== nothing && stop_date < node.start_date
     # May occur when ETAT = MODIFIE_MORT_NE.
-    stop_date = node.date_debut
+    stop_date = node.start_date
   end
   return stop_date
 end
@@ -590,9 +600,8 @@ node_title_short(table_of_content::Document) = table_of_content.texte_version["M
 node_title_short(node::Node) = node_title(node)
 
 
-function parse_structure(articles_by_id::Dict{String, Vector{Article}},
-    changed_by_message_by_date::Dict{Date, OrderedDict{String, Changed}}, dir::String,
-    table_of_content::AbstractTableOfContent)
+function parse_structure(table_of_content::AbstractTableOfContent, articles_by_id::Dict{String, Vector{Article}},
+    changed_by_message_by_date::Dict{Date, OrderedDict{String, Changed}}, dir::String)
   structure = node_structure(table_of_content)
   table_of_content_start_date = node_start_date(table_of_content)
   if table_of_content_start_date === nothing
@@ -600,6 +609,7 @@ function parse_structure(articles_by_id::Dict{String, Vector{Article}},
   end
   table_of_content_stop_date = node_stop_date(table_of_content)
 
+  children = TableOfContent[]
   for lien_section_ta in get(structure, "LIEN_SECTION_TA", Dict{String, Any}[])
     lien_start_date = get(lien_section_ta, "@debut", nothing)
     if lien_start_date === nothing
@@ -622,15 +632,32 @@ function parse_structure(articles_by_id::Dict{String, Vector{Article}},
         element_to_section_ta,
         require,
       ) |> to_value
+      free(section_ta_xml_document)
     catch
       warn("An exception occured in file $section_ta_file_path.")
       rethrow()
     end
-    child_table_of_content = TableOfContent(table_of_content, max_date(table_of_content_start_date, lien_start_date),
+    child = TableOfContent(table_of_content, max_date(table_of_content_start_date, lien_start_date),
       min_date(table_of_content_stop_date, lien_stop_date), section_ta)
-    parse_structure(articles_by_id, changed_by_message_by_date, dir, child_table_of_content)
+    # When the start date of the table of content is in conflict with the stop date of its previous version, consider
+    # that the start date is right and correct the stop date.
+    if !isempty(children)
+      previous_child = children[end]
+      if node_dir_name(previous_child) == node_dir_name(child) &&
+          (previous_child.stop_date === nothing || previous_child.stop_date > child.start_date)
+        previous_child.stop_date = child.start_date
+      end
+    end
+    push!(children, child)
+  end
+  for child in children
+    if child.stop_date !== nothing && child.start_date >= child.stop_date
+      continue
+    end
+    parse_structure(child, articles_by_id, changed_by_message_by_date, dir)
   end
 
+  child_articles = Article[]
   for lien_article in get(structure, "LIEN_ART", Dict{String, Any}[])
     lien_start_date = get(lien_article, "@debut", nothing)
     if lien_start_date === nothing
@@ -647,14 +674,30 @@ function parse_structure(articles_by_id::Dict{String, Vector{Article}},
 
     article_id = lien_article["@id"]
     article_dict = load_article(dir, article_id)
-    meta_article = article_dict["META"]["META_SPEC"]["META_ARTICLE"]
     article = Article(table_of_content, max_date(table_of_content_start_date, lien_start_date),
       min_date(table_of_content_stop_date, lien_stop_date), article_dict)
+    # When the start date of the article is in conflict with the stop date of its previous version, consider
+    # that the start date is right and correct the stop date.
+    if !isempty(child_articles)
+      previous_article = child_articles[end]
+      if node_filename(previous_article) == node_filename(article) &&
+          (previous_article.stop_date === nothing || previous_article.stop_date > article.start_date)
+        previous_article.stop_date = article.start_date
+      end
+    end
+    push!(child_articles, article)
+  end
+  for article in child_articles
+    if article.stop_date !== nothing && article.start_date >= article.stop_date
+      continue
+    end
+    article_dict = article.dict
+    article_id = article_dict["META"]["META_COMMUN"]["ID"]
+    meta_article = article_dict["META"]["META_SPEC"]["META_ARTICLE"]
     same_id_articles = get!(articles_by_id, article_id) do
       return Article[]
     end
     push!(same_id_articles, article)
-
     try
       start_messages = String[]
       stop_messages = String[]
