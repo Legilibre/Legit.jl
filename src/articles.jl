@@ -194,7 +194,7 @@ function commonmark(xhtml_element::XMLElement; depth::Int = 1)
         push!(blocks, "\n")
       elseif child_name == "br"
         push!(blocks, "\n\n")
-      elseif child_name in ("div", "font", "sub", "sup", "table")
+      elseif child_name in ("div", "font", "sub", "sup", "table", "u")
         push!(blocks, string(xhtml_child))
       elseif child_name in ("em", "i")
         content_commonmark = strip(commonmark(xhtml_child, depth = depth))
