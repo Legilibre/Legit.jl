@@ -83,6 +83,7 @@ println(document_index, " / ", document_dir)
 
     articles_by_id = @compat Dict{String, Vector{Article}}()  # Articles are sorted by start date for each ID.
     changed_by_message_by_date = @compat Dict{Date, OrderedDict{String, Changed}}()
+    root_section = Section(root_node.title)
     for (version_filename, struct_filename) in zip(version_filenames, struct_filenames)
       version_xml_document = parse_file(joinpath(version_dir, version_filename))
       texte_version = Convertible(parse_xml_element(root(version_xml_document))) |> pipe(
