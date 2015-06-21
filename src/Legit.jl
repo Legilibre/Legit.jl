@@ -46,7 +46,7 @@ function main()
   latest_commit = nothing
   if mode == "all"
     documents_dir_walker = @task walk_documents_dir(joinpath(args["legi_dir"], "global"))
-    node_by_nature = @compat Dict{String, Nature}()
+    node_by_nature = @compat Dict{String, SimpleNode}()
     root_title = "Lois et règlements français"
   else
     @assert mode == "codes"
@@ -56,7 +56,10 @@ function main()
     )
     root_title = "Codes juridiques français"
   end
+  codes_en_vigueur_node = nothing
+  codes_non_vigueur_node = nothing
   root_node = RootNode(root_title)
+  root_section = Section(root_node.title)
   root_tree = nothing
   skip_documents = args["start"] !== nothing
   for (document_index, document_dir) in enumerate(documents_dir_walker)
@@ -83,7 +86,6 @@ println(document_index, " / ", document_dir)
 
     articles_by_id = @compat Dict{String, Vector{Article}}()  # Articles are sorted by start date for each ID.
     changed_by_message_by_date = @compat Dict{Date, OrderedDict{String, Changed}}()
-    root_section = Section(root_node.title)
     for (version_filename, struct_filename) in zip(version_filenames, struct_filenames)
       version_xml_document = parse_file(joinpath(version_dir, version_filename))
       texte_version = Convertible(parse_xml_element(root(version_xml_document))) |> pipe(
@@ -114,11 +116,22 @@ println(document_index, " / ", document_dir)
       if mode == "all"
         nature = get(texte_version["META"]["META_COMMUN"], "NATURE", "nature_inconnue")
         document_container = get!(node_by_nature, nature) do
-          return Nature(root_node, nature)
+          return SimpleNode(root_node, nature)
         end
       else
         @assert mode == "codes"
         document_container = root_node
+      end
+      if contains(document_dir, "code_en_vigueur")
+        if codes_en_vigueur_node === nothing
+          codes_en_vigueur_node = SimpleNode(document_container, "Codes en vigueur")
+        end
+        document_container = codes_en_vigueur_node
+      elseif contains(document_dir, "code_non_vigueur")
+        if codes_non_vigueur_node === nothing
+          codes_non_vigueur_node = SimpleNode(document_container, "Codes non en vigueur")
+        end
+        document_container = codes_non_vigueur_node
       end
       document = Document(document_container, texte_version, textelr)
 @show node_title(document)

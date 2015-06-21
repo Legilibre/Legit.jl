@@ -95,15 +95,9 @@ end
 
 
 type Document <: AbstractTableOfContent
-  container::Node  # TODO: Nature or RootNode or Section
+  container::Node  # TODO: SimpleNode or RootNode or Section
   texte_version::Dict  # Dict{String, Any}
   textelr::Dict  # Dict{String, Any}
-end
-
-
-type Nature <: Node
-  container::RootNode
-  title::String
 end
 
 
@@ -124,6 +118,12 @@ end
 Section(title::String) = Section(title, title)
 
 Section() = Section("", "")
+
+
+type SimpleNode <: Node
+  container::RootNode
+  title::String
+end
 
 
 type TableOfContent <: AbstractTableOfContent
@@ -374,7 +374,7 @@ min_date(::Nothing, right::Date) = right
 min_date(::Nothing, ::Nothing) = nothing
 
 
-node_dir_name(nature::Nature) = slugify(node_title_short(nature); separator = '_')
+node_dir_name(nature::SimpleNode) = slugify(node_title_short(nature); separator = '_')
 
 node_dir_name(table_of_content::Document) = slugify(node_title_short(table_of_content); separator = '_')
 
@@ -414,7 +414,7 @@ node_name(table_of_content::AbstractTableOfContent) = node_dir_name(table_of_con
 
 node_name(article::Article) = node_filename(article)
 
-node_name(nature::Nature) = node_dir_name(nature)
+node_name(nature::SimpleNode) = node_dir_name(nature)
 
 
 node_number(table_of_content::AbstractTableOfContent) = node_number(node_title_short(table_of_content))
@@ -475,7 +475,7 @@ node_sortable_title(document::Document) = get(document.texte_version["META"]["ME
   node_title_short(document) :
   node_sortable_title(node_number_and_simple_title(document)...)
 
-node_sortable_title(nature::Nature) = node_title_short(nature)
+node_sortable_title(nature::SimpleNode) = node_title_short(nature)
 
 node_sortable_title(section::Section) = section.sortable_title
 
@@ -584,7 +584,7 @@ node_structure(table_of_content::TableOfContent) = table_of_content.dict["STRUCT
 
 node_title(article::Article) = string("Article ", node_number(article))
 
-node_title(nature::Nature) = nature.title
+node_title(nature::SimpleNode) = nature.title
 
 node_title(section::Section) = section.title
 
