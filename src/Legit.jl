@@ -57,10 +57,18 @@ function main()
     root_title = "Codes juridiques français"
   end
   root_node = RootNode(root_title)
-  root_section = Section(root_node.title)
   root_tree = nothing
+  skip_documents = args["start"] !== nothing
   for (document_index, document_dir) in enumerate(documents_dir_walker)
-    # document_index < 96802 && continue  # TODO: Remove.
+    if skip_documents
+      document_cid = basename(document_dir)
+      if document_cid == args["start"]
+        skip_documents = false
+      else
+        continue
+      end
+    end
+
 println()
 println()
 println("=============================================================================================================")
@@ -322,8 +330,6 @@ println("Deleted: ", string(node_id(article), " ", node_git_file_path(article)))
         end
       end
     end
-
-    # document_index >= 12 && break  # TODO: Remove.
   end
 end
 
@@ -342,6 +348,9 @@ function parse_command_line()
       default = "flat"
       help = "mode for README file (deep, flat, none, single-page)"
       range_tester = value -> value in ("deep", "flat", "none", "single-page")
+    "--start", "-s"
+      help = "CID of first LEGI document to parse"
+      range_tester = value -> Convertible(value) |> pipe(validate_cid, require) |> is_valid
     "--verbose", "-v"
       action = :store_true
       help = "increase output verbosity"
