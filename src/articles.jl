@@ -210,6 +210,10 @@ function commonmark(xhtml_element::XMLElement; depth::Int = 1)
           push!(blocks, content_commonmark)
           push!(blocks, "\n\n")
         end
+      elseif child_name == "NOTES"
+        # Ignore empty <NOTES/> "HTML" element.
+        content_commonmark = strip(commonmark(xhtml_child, depth = depth))
+        @assert isempty(content_commonmark) "Non empty NOTES: $content_commonmark."
       elseif child_name == "p"
         push!(blocks, "\n\n")
         content_commonmark = rstrip(commonmark(xhtml_child, depth = depth))
