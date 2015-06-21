@@ -630,6 +630,10 @@ function parse_structure(table_of_content::AbstractTableOfContent, articles_by_i
 
     section_ta = nothing
     section_ta_file_path = joinpath(dir, "section_ta" * lien_section_ta["@url"])
+    if !ispath(section_ta_file_path)
+      warn("Missing SECTION_TA file $section_ta_file_path.")
+      continue
+    end
     try
       section_ta_xml_document = parse_file(section_ta_file_path)
       section_ta = Convertible(parse_xml_element(root(section_ta_xml_document))) |> pipe(
