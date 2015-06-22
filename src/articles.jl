@@ -378,12 +378,12 @@ min_date(::Nothing, right::Date) = right
 min_date(::Nothing, ::Nothing) = nothing
 
 
-node_dir_name(nature::SimpleNode) = slugify(node_title_short(nature); separator = '_')
+node_dir_name(nature::SimpleNode) = slugify(node_title_short(nature))
 
-node_dir_name(table_of_content::Document) = slugify(node_title_short(table_of_content); separator = '_')
+node_dir_name(table_of_content::Document) = slugify(node_title_short(table_of_content))
 
 node_dir_name(table_of_content::TableOfContent) = slugify(node_number_and_simple_title(node_title_short(
-  table_of_content))[2]; separator = '_')
+  table_of_content))[2])
 
 
 node_filename(article::Article) = string("article_", slugify(node_number(article)), ".md")
@@ -491,9 +491,9 @@ function node_sortable_title(number::String, simple_title::String)
     return slugify(simple_title)
   end
   number_fragments = String[]
-  slug = slugify(number; separator = '_')
-  slug = replace(slug, "_a_l_article_", "_")
-  for fragment in split(slug, '_')
+  slug = slugify(number)
+  slug = replace(slug, "-a-l-article-", "-")
+  for fragment in split(slug, '-')
     if isdigit(fragment)
       @assert length(fragment) <= 4
       push!(number_fragments, ("0000" * fragment)[end - 3 : end])
