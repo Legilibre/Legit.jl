@@ -108,11 +108,13 @@ end
 
 
 type Section <: Node
+  short_title::String
   sortable_title::String
   title::String
   child_by_name::Dict{String, Node}
 
-  Section(sortable_title::String, title::String) = new(sortable_title, title, @compat Dict{String, Node}())
+  Section(short_title::String, title::String) = new(short_title, node_sortable_title(short_title), title,
+    @compat Dict{String, Node}())
 end
 
 Section(title::String) = Section(title, title)
@@ -121,7 +123,7 @@ Section() = Section("", "")
 
 
 type SimpleNode <: Node
-  container::RootNode
+  container::Node
   title::String
 end
 
@@ -131,6 +133,14 @@ type TableOfContent <: AbstractTableOfContent
   start_date::Union(Date, Nothing)
   stop_date::Union(Date, Nothing)
   dict::Dict  # Dict{String, Any}
+end
+
+
+type UnparsedSection <: Node
+  short_title::String
+  sortable_title::String
+
+  UnparsedSection(short_title::String) = new(short_title, node_sortable_title(short_title))
 end
 
 
@@ -258,7 +268,7 @@ function commonmark_children(section::Section, mode::String; depth::Int = 1, lin
   else
     indent = "  " ^ (depth - 1)
     for (sortable_number, name, child) in children_infos
-      push!(blocks, "$(indent)- [$(node_title(child))]($link_prefix$name)\n")
+      push!(blocks, "$(indent)- [$(node_short_title(child))]($link_prefix$name)\n")
       if mode == "deep"
         push!(blocks, commonmark_children(child, mode; depth = depth + 1, link_prefix = string(link_prefix, name, '/')))
       end
@@ -378,15 +388,17 @@ min_date(::Nothing, right::Date) = right
 min_date(::Nothing, ::Nothing) = nothing
 
 
-node_dir_name(nature::SimpleNode) = slugify(node_title_short(nature))
+node_dir_name(simple_node::SimpleNode) = slugify(node_short_title(simple_node))
 
-node_dir_name(table_of_content::Document) = slugify(node_title_short(table_of_content))
+node_dir_name(section::Section) = section.dir_name
 
-node_dir_name(table_of_content::TableOfContent) = slugify(node_number_and_simple_title(node_title_short(
+node_dir_name(table_of_content::Document) = slugify(node_short_title(table_of_content))
+
+node_dir_name(table_of_content::TableOfContent) = slugify(node_number_and_simple_title(node_short_title(
   table_of_content))[2])
 
 
-node_filename(article::Article) = string("article_", slugify(node_number(article)), ".md")
+node_filename(article::Article) = string("article-", slugify(node_number(article)), ".md")
 
 node_filename(node::Node) = node_dir_name(node) * ".md"
 
@@ -418,25 +430,25 @@ node_name(table_of_content::AbstractTableOfContent) = node_dir_name(table_of_con
 
 node_name(article::Article) = node_filename(article)
 
-node_name(nature::SimpleNode) = node_dir_name(nature)
+node_name(simple_node::SimpleNode) = node_dir_name(simple_node)
 
 
-node_number(table_of_content::AbstractTableOfContent) = node_number(node_title_short(table_of_content))
+node_number(table_of_content::AbstractTableOfContent) = node_number(node_short_title(table_of_content))
 
 node_number(article::Article) = article.dict["META"]["META_SPEC"]["META_ARTICLE"]["NUM"]
 
-node_number(section::Section) = node_number(node_title_short(section))
+node_number(section::Section) = node_number(node_short_title(section))
 
-node_number(title::String) = node_number_and_simple_title(title)[1]
+node_number(short_title::String) = node_number_and_simple_title(short_title)[1]
 
 
-node_number_and_simple_title(table_of_content::AbstractTableOfContent) = node_number_and_simple_title(node_title_short(
+node_number_and_simple_title(table_of_content::AbstractTableOfContent) = node_number_and_simple_title(node_short_title(
   table_of_content))
 
-function node_number_and_simple_title(title::String)
+function node_number_and_simple_title(short_title::String)
   number_fragments = String[]
   simple_title_fragments = String[]
-  for fragment in split(strip(title))
+  for fragment in split(strip(short_title))
     fragment_lower = lowercase(fragment)
     if fragment_lower == "n°"
       continue
@@ -457,7 +469,7 @@ function node_number_and_simple_title(title::String)
     elseif isdigit(fragment) || slug in ("ier", "unique") || ismatch(r"^[ivxlcdm]+$",fragment_lower) ||
         slug in keys(number_by_latin_extension) || slug in keys(number_by_slug) ||
         length(slug) <= 3 && all(letter -> 'a' <= letter <= 'z', slug) &&
-          !(slug in ("de", "des", "du", "la", "le", "les")) ||
+          !(slug in ("de", "des", "du", "en", "la", "le", "les")) ||
         2 <= length(slug) <= 5 && 'a' <= slug[1] <= 'z' && isdigit(slug[2 : end]) ||
         3 <= length(slug) <= 6 && all(letter -> 'a' <= letter <= 'z', slug[1 : 2]) && isdigit(slug[3 : end])
       push!(number_fragments, fragment)
@@ -473,18 +485,28 @@ function node_number_and_simple_title(title::String)
 end
 
 
-node_sortable_title(article::Article) = node_sortable_title(node_number(article), node_title_short(article))
+node_short_title(document::Document) = document.texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITRE"]
 
-node_sortable_title(document::Document) = get(document.texte_version["META"]["META_COMMUN"], "NATURE", "") == "CODE" ?
-  node_title_short(document) :
-  node_sortable_title(node_number_and_simple_title(document)...)
+node_short_title(section::Section) = section.short_title
 
-node_sortable_title(nature::SimpleNode) = node_title_short(nature)
+node_short_title(section::UnparsedSection) = section.short_title
+
+node_short_title(node::Node) = node_title(node)
+
+
+node_sortable_title(article::Article) = node_sortable_title(node_number(article), node_short_title(article))
 
 node_sortable_title(section::Section) = section.sortable_title
 
-node_sortable_title(table_of_content::TableOfContent) = node_sortable_title(node_number_and_simple_title(
-  table_of_content)...)
+node_sortable_title(simple_node::SimpleNode) = node_short_title(simple_node)
+
+node_sortable_title(section::UnparsedSection) = section.sortable_title
+
+node_sortable_title(table_of_content::AbstractTableOfContent) = node_sortable_title(node_short_title(table_of_content))
+
+node_sortable_title(short_title::String) = isempty(short_title) ?
+  "" :
+  node_sortable_title(node_number_and_simple_title(short_title)...)
 
 function node_sortable_title(number::String, simple_title::String)
   if isempty(number)
@@ -541,7 +563,7 @@ function node_sortable_title(number::String, simple_title::String)
           push!(number_fragments, number)
         elseif length(fragment) <= 3 && all(letter -> 'a' <= letter <= 'z', fragment) ||
             length(fragment) <= 3 && all(letter -> 'a' <= letter <= 'z', fragment) &&
-              !(fragment in ("de", "des", "du", "la", "le", "les"))
+              !(fragment in ("de", "des", "du", "en", "la", "le", "les"))
           push!(number_fragments, fragment)
         elseif 2 <= length(fragment) <= 5 && 'a' <= fragment[1] <= 'z' && isdigit(fragment[2 : end])
           push!(number_fragments, fragment[1 : 1])
@@ -588,20 +610,41 @@ node_structure(table_of_content::TableOfContent) = table_of_content.dict["STRUCT
 
 node_title(article::Article) = string("Article ", node_number(article))
 
-node_title(nature::SimpleNode) = nature.title
+node_title(simple_node::SimpleNode) = simple_node.title
 
 node_title(section::Section) = section.title
 
-node_title(table_of_content::Document) = table_of_content.texte_version["META"]["META_SPEC"][
-  "META_TEXTE_VERSION"]["TITREFULL"]
+node_title(document::Document) = document.texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITREFULL"]
 
 node_title(table_of_content::TableOfContent) = table_of_content.dict["TITRE_TA"]
 
 
-node_title_short(table_of_content::Document) = table_of_content.texte_version["META"]["META_SPEC"][
-  "META_TEXTE_VERSION"]["TITRE"]
-
-node_title_short(node::Node) = node_title(node)
+function parse_section_commonmark(repository::GitRepo, root_tree::GitTree, git_file_path::String,
+    section_short_title::String)
+  entry = entry_bypath(root_tree, git_file_path)
+  if entry !== nothing
+    oid = Oid(entry)
+    blob = lookup_blob(repository, oid)
+    lines = split(text(blob), '\n')
+    if !isempty(lines)
+      title_line = lines[1]
+      @assert startswith(title_line, "# ")
+      section_title = title_line[3 : end]
+      section = Section(section_short_title, section_title)
+      if length(lines) >= 2
+        @assert isempty(lines[2])
+        for list_item_line in lines[3 : end]
+          list_item_line_match = match(r"^- \[(?P<short_title>.+)\]\((?P<slug>.+)\)$", list_item_line)
+          if list_item_line_match !== nothing
+            section.child_by_name[list_item_line_match.captures[2]] = UnparsedSection(list_item_line_match.captures[1])
+          end
+        end
+      end
+      return section
+    end
+  end
+  return Section(section_short_title, section_short_title)
+end
 
 
 function parse_structure(table_of_content::AbstractTableOfContent, articles_by_id::Dict{String, Vector{Article}},
