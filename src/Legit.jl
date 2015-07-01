@@ -14,7 +14,6 @@ using ArgParse
 using Biryani
 using Biryani.DatesConverters
 using Compat
-import DataStructures: OrderedDict
 using Dates: Date, DateTime, datetime2unix, Day
 using LibGit2
 using LightXML
@@ -84,7 +83,7 @@ println(document_index, " / ", document_dir)
 
     root_section = root_tree === nothing ?
       Section(root_node.title) :
-      parse_section_commonmark(repository, root_tree, "README.md", root_node.title)
+      parse_section_commonmark(repository, entry_bypath(root_tree, "README.md"), root_node.title)
 
     version_dir = joinpath(document_dir, "texte", "version")
     version_filenames = sort(readdir(version_dir))
@@ -94,14 +93,14 @@ println(document_index, " / ", document_dir)
       "Directory $struct_dir doesn't contain the same number of files as directory: $struct_filenames.")
 
     articles_by_id = @compat Dict{String, Vector{Article}}()  # Articles are sorted by start date for each ID.
-    changed_by_message_by_date = @compat Dict{Date, OrderedDict{String, Changed}}()
+    changed_by_message_by_date = @compat Dict{Date, Dict{String, Changed}}()
     for (version_filename, struct_filename) in zip(version_filenames, struct_filenames)
       version_xml_document = parse_file(joinpath(version_dir, version_filename))
       texte_version = Convertible(parse_xml_element(root(version_xml_document))) |> pipe(
         element_to_texte_version,
         require,
       ) |> to_value
-      free(version_xml_document)
+      # free(version_xml_document)
 
       @assert(version_filename == struct_filename,
         "Filenames for struct and version differ: $struct_filename != $version_filename.")
@@ -110,7 +109,7 @@ println(document_index, " / ", document_dir)
         element_to_textelr,
         require,
       ) |> to_value
-      free(struct_xml_document)
+      # free(struct_xml_document)
 
       # articles_tree = parse_structure(changed_by_changer, document_dir, textelr["STRUCT"],
       #   texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITREFULL"])
@@ -149,20 +148,21 @@ println()
       parse_structure(document, articles_by_id, changed_by_message_by_date, document_dir)
     end
     link_articles(articles_by_id)
-    dates = sort(collect(keys(changed_by_message_by_date)))
 
-    for date in dates
-      # upserted_git_files_path = Set{String}()
-      # for (message, changed) in changed_by_message_by_date[date]
-      #   for article in changed.articles
-      #     push!(upserted_git_files_path, node_git_file_path(article))
-      #   end
-      # end
-
-      for (message, changed) in changed_by_message_by_date[date]
+    for date in sort(collect(keys(changed_by_message_by_date)))
+      changed_by_message = changed_by_message_by_date[date]
+      for message in sort(collect(keys(changed_by_message)))
+        changed = changed_by_message[message]
 println("-------------------------------------------------------------------------------------------------------------")
 println("$date $message")
         epoch = int64(datetime2unix(DateTime(date)))
+        if args["date"]
+          # Modify dates before 1970-02-01 (epoch = 2678340) to ensure that they are >= 1970-01-01 (epoch = 0).
+          if epoch < 2678340  # = 31 * 24 * 60 * 60 = 1970-02-01
+            epoch /= 24 * 60 * 60  # Days become seconds
+            epoch += 2678340 - 31  # 31 = days of 1970-01
+          end
+        end
         time_offset = 0
         author_signature = Signature("République française", "gitloi@data.gouv.fr", epoch, time_offset)
         committer_signature = author_signature
@@ -189,8 +189,8 @@ println("Upserted: ", string(node_id(article), " ", node_git_file_path(article))
               return Section()
             end
             if isa(child_section, UnparsedSection)
-              child_section = parse_section_commonmark(repository, root_tree,
-                string(join(section_names, '/'), '/', "README.md"), child_section.short_title)
+              child_section = parse_section_commonmark(repository,
+                entry_bypath(root_tree, string(join(section_names, '/'), '/', "README.md")), child_section.short_title)
               section.child_by_name[dir_name] = child_section
             end
             section = child_section
@@ -204,7 +204,6 @@ println("Upserted: ", string(node_id(article), " ", node_git_file_path(article))
         for article in changed.deleted_articles
           next_version = get(article.next_version, article)
           if next_version != article && node_git_file_path(article) == node_git_file_path(next_version)
-          # if node_git_file_path(article) in upserted_git_files_path
             # Article is neither deleted nor moved => Keep it unchanged.
             continue
           end
@@ -231,8 +230,8 @@ println("Deleted: ", string(node_id(article), " ", node_git_file_path(article)))
               sections = Node[]
               break
             elseif isa(child_section, UnparsedSection)
-              child_section = parse_section_commonmark(repository, root_tree,
-                string(join(section_names, '/'), '/', "README.md"), child_section.short_title)
+              child_section = parse_section_commonmark(repository,
+                entry_bypath(root_tree, string(join(section_names, '/'), '/', "README.md")), child_section.short_title)
               section.child_by_name[name] = child_section
             end
             section = child_section
@@ -376,6 +375,9 @@ end
 function parse_command_line()
   arg_parse_settings = ArgParseSettings()
   @add_arg_table arg_parse_settings begin
+    "--date", "-d"
+      action = :store_true
+      help = "modify commit dates before 1970-02-01 to ensure that they are after 1970-01-01"
     "--erase", "-e"
       action = :store_true
       help = "erase existing Git repository"

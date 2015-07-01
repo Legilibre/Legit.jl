@@ -80,6 +80,12 @@ end
   dict::Dict  # Dict{String, Any}
   next_version::Nullable{Article}  # Next version of the same article (may have the same ID)
 
+  function Article(container::AbstractTableOfContent, start_date::Union(Date, Nothing), stop_date::Union(Date, Nothing),
+      dict::Dict, next_version::Nullable{Article})
+    article = new(container, start_date, stop_date, dict, next_version)
+    finalizer(article, free!)
+    return article
+  end
 end
 
 Article(container::AbstractTableOfContent, start_date::Union(Date, Nothing), stop_date::Union(Date, Nothing),
@@ -98,6 +104,12 @@ type Document <: AbstractTableOfContent
   container::Node  # TODO: SimpleNode or RootNode or Section
   texte_version::Dict  # Dict{String, Any}
   textelr::Dict  # Dict{String, Any}
+
+  function Document(container::Node, texte_version::Dict, textelr::Dict)
+    document = new(container, texte_version, textelr)
+    finalizer(document, free!)
+    return document
+  end
 end
 
 
@@ -133,6 +145,13 @@ type TableOfContent <: AbstractTableOfContent
   start_date::Union(Date, Nothing)
   stop_date::Union(Date, Nothing)
   dict::Dict  # Dict{String, Any}
+
+  function TableOfContent(container::AbstractTableOfContent, start_date::Union(Date, Nothing),
+      stop_date::Union(Date, Nothing), dict::Dict)
+    table_of_content = new(container, start_date, stop_date, dict)
+    finalizer(table_of_content, free!)
+    return table_of_content
+  end
 end
 
 
@@ -278,6 +297,37 @@ function commonmark_children(section::Section, mode::String; depth::Int = 1, lin
 end
 
 
+free!(article::Article) = free!(article.dict)
+
+function free!(dict::Dict)
+  for (key, value) in dict
+    if key == "CONTENU"
+      # LighXML.jl needs explicit garbage collecting.
+      dict[key] = nothing
+      free(value)
+    else
+      free!(value)
+    end
+  end
+end
+
+function free!(document::Document)
+  free!(document.texte_version)
+  free!(document.textelr)
+end
+
+function free!(array::Array)
+  for value in array
+    free!(value)
+  end
+end
+
+free!(table_of_content::TableOfContent) = free!(table_of_content.dict)
+
+function free!(value)
+end
+
+
 function link_articles(articles_by_id)
   for (article_id, same_id_articles) in articles_by_id
     sort!(same_id_articles, by = article -> min_date(node_start_date(article), node_stop_date(article)))
@@ -366,7 +416,7 @@ function load_article(dir::String, id::String)
     element_to_article,
     require,
   ) |> to_value
-  free(article_xml_document)
+  # free(article_xml_document)
 end
 
 
@@ -619,36 +669,34 @@ node_title(document::Document) = document.texte_version["META"]["META_SPEC"]["ME
 node_title(table_of_content::TableOfContent) = table_of_content.dict["TITRE_TA"]
 
 
-function parse_section_commonmark(repository::GitRepo, root_tree::GitTree, git_file_path::String,
-    section_short_title::String)
-  entry = entry_bypath(root_tree, git_file_path)
-  if entry !== nothing
-    oid = Oid(entry)
-    blob = lookup_blob(repository, oid)
-    lines = split(text(blob), '\n')
-    if !isempty(lines)
-      title_line = lines[1]
-      @assert startswith(title_line, "# ")
-      section_title = title_line[3 : end]
-      section = Section(section_short_title, section_title)
-      if length(lines) >= 2
-        @assert isempty(lines[2])
-        for list_item_line in lines[3 : end]
-          list_item_line_match = match(r"^- \[(?P<short_title>.+)\]\((?P<slug>.+)\)$", list_item_line)
-          if list_item_line_match !== nothing
-            section.child_by_name[list_item_line_match.captures[2]] = UnparsedSection(list_item_line_match.captures[1])
-          end
+parse_section_commonmark(repository::GitRepo, ::Nothing, section_short_title::String) = Section(section_short_title)
+
+function parse_section_commonmark(repository::GitRepo, entry::GitTreeEntry, section_short_title::String)
+  oid = Oid(entry)
+  blob = lookup_blob(repository, oid)
+  lines = split(text(blob), '\n')
+  if !isempty(lines)
+    title_line = lines[1]
+    @assert startswith(title_line, "# ")
+    section_title = title_line[3 : end]
+    section = Section(isempty(section_short_title) ? section_title : section_short_title, section_title)
+    if length(lines) >= 2
+      @assert isempty(lines[2])
+      for list_item_line in lines[3 : end]
+        list_item_line_match = match(r"^- \[(?P<short_title>.+)\]\((?P<slug>.+)\)$", list_item_line)
+        if list_item_line_match !== nothing
+          section.child_by_name[list_item_line_match.captures[2]] = UnparsedSection(list_item_line_match.captures[1])
         end
       end
-      return section
     end
+    return section
   end
-  return Section(section_short_title, section_short_title)
+  return Section(section_short_title)
 end
 
 
 function parse_structure(table_of_content::AbstractTableOfContent, articles_by_id::Dict{String, Vector{Article}},
-    changed_by_message_by_date::Dict{Date, OrderedDict{String, Changed}}, dir::String)
+    changed_by_message_by_date::Dict{Date, Dict{String, Changed}}, dir::String)
   structure = node_structure(table_of_content)
   table_of_content_start_date = node_start_date(table_of_content)
   if table_of_content_start_date === nothing
@@ -683,7 +731,7 @@ function parse_structure(table_of_content::AbstractTableOfContent, articles_by_i
         element_to_section_ta,
         require,
       ) |> to_value
-      free(section_ta_xml_document)
+      # free(section_ta_xml_document)
     catch
       warn("An exception occured in file $section_ta_file_path.")
       rethrow()
@@ -792,16 +840,10 @@ function parse_structure(table_of_content::AbstractTableOfContent, articles_by_i
         push!(start_messages, "Modifications d'origine indéterminée")
       end
       changed_by_message = get!(changed_by_message_by_date, creation_date) do
-        return OrderedDict{String, Changed}()
+        return @compat Dict{String, Changed}()
       end
-      # OrderedDict doesn't support this get! signature.
-      # changed = get!(changed_by_message, join(start_messages, ", ", " et ")) do
-      #   return Changed()
-      # end
-      start_message = join(start_messages, ", ", " et ")
-      changed = get(changed_by_message, start_message, nothing)
-      if changed === nothing
-        changed_by_message[start_message] = changed = Changed()
+      changed = get!(changed_by_message, join(start_messages, ", ", " et ")) do
+        return Changed()
       end
       push!(changed.articles, article)
 
@@ -811,16 +853,10 @@ function parse_structure(table_of_content::AbstractTableOfContent, articles_by_i
           push!(stop_messages, "Suppressions d'origine indéterminée")
         end
         changed_by_message = get!(changed_by_message_by_date, deletion_date) do
-          return OrderedDict{String, Changed}()
+          return @compat Dict{String, Changed}()
         end
-        # OrderedDict doesn't support this get! signature.
-        # changed = get!(changed_by_message, join(stop_messages, ", ", " et ")) do
-        #   return Changed()
-        # end
-        stop_message = join(stop_messages, ", ", " et ")
-        changed = get(changed_by_message, stop_message, nothing)
-        if changed === nothing
-          changed_by_message[stop_message] = changed = Changed()
+        changed = get!(changed_by_message, join(stop_messages, ", ", " et ")) do
+          return Changed()
         end
         push!(changed.deleted_articles, article)
       end
