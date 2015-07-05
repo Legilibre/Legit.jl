@@ -121,7 +121,9 @@ function main()
             @assert !(parent_git_dir_names in git_dirs_names_to_build)
             parent_tree_builder = tree_builder_by_git_dir_names[parent_git_dir_names]
             if tree_id === nothing
-              delete!(parent_tree_builder, dir_name)
+              if parent_tree_builder[dir_name] !== nothing
+                delete!(parent_tree_builder, dir_name)
+              end
             else
               insert!(parent_tree_builder, dir_name, tree_id, int(0o40000))  # FILEMODE_TREE
             end
