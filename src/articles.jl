@@ -940,5 +940,5 @@ end
 
 function slugify(string::String; separator::Char = '-', transform::Function = lowercase)
   simplified = replace(replace(string, "N°", "no "), "n°", "no ")
-  return slugify(simplified, separator = separator, transform = transform)
+  return Slugify.slugify(simplified, separator = separator, transform = transform)
 end
