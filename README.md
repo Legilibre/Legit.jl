@@ -32,10 +32,13 @@ To delete this "reordered" branch (to launch the script once again after a failu
 
     git branch -d reordered
 
-Push this branch to its Git repository (as master):
+Push this branch to its Git repositories (as master):
 
     git remote add framasoft git@git.framasoft.org:etalab/codes-juridiques-francais.git
     git push -u framasoft +reordered:master
+
+    git remote add github git@github.com:etalab/codes-juridiques-francais.git
+    git push -u github +reordered:master
 
 To see the generated Git repository: https://git.framasoft.org/etalab/codes-juridiques-francais/tree/master.
 
@@ -53,10 +56,13 @@ Reorder the commits by dates et by messages:
 
     julia src/LegitReorderCommits.jl ../lois-non-codifiees-et-reglements-francais.git/
 
-Push this branch to its Git repository (as master):
+Push this branch to its Git repositories (as master):
 
     git remote add framasoft git@git.framasoft.org:etalab/lois-non-codifiees-et-reglements-francais.git
     git push -u framasoft +reordered:master
+
+    git remote add github git@github.com:etalab/lois-non-codifiees-et-reglements-francais.git
+    git push -u github +reordered:master
 
 To see the generated Git repository: https://git.framasoft.org/etalab/lois-non-codifiees-et-reglements-francais/tree/master.
 
