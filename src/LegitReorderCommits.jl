@@ -185,7 +185,8 @@ function merge(repository::GitRepo, git_dir_names::Tuple, current_tree::GitTree,
     else
       parent_id = Oid(parent_entry)
       if current_id != parent_id
-        if !isempty(git_dir_names) && git_dir_names[end] in ("codes-en-vigueur", "codes-non-en-vigueur")
+        if !isempty(git_dir_names) && (git_dir_names[end] in ("codes-en-vigueur", "codes-non-en-vigueur") ||
+            ismatch(r"^\d{4}$", git_dir_names[end]))
           # Current is a document. Use current version, ignoring latest.
           insert!(tree_builder, current_name, current_id, int(filemode(current_entry)))
         else
