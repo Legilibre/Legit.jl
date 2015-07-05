@@ -15,7 +15,7 @@ using Compat
 using Dates
 using LibGit2
 using LightXML  # Not used, but needed by include("articles.jl")
-using Slugify  # Not used, but needed by include("articles.jl")
+import Slugify  # Not used, but needed by include("articles.jl")
 
 
 include("articles.jl")

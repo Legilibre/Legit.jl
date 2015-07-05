@@ -223,7 +223,7 @@ function commonmark(xhtml_element::XMLElement; depth::Int = 1)
         push!(blocks, "\n")
       elseif child_name == "br"
         push!(blocks, "\n\n")
-      elseif child_name in ("div", "font", "sub", "sup", "table", "u")
+      elseif child_name in ("abbr", "acronym", "code", "div", "font", "hr", "ol", "sub", "sup", "table", "u", "ul")
         push!(blocks, string(xhtml_child))
       elseif child_name in ("em", "i")
         content_commonmark = strip(commonmark(xhtml_child, depth = depth))
@@ -240,9 +240,11 @@ function commonmark(xhtml_element::XMLElement; depth::Int = 1)
           push!(blocks, "\n\n")
         end
       elseif child_name == "NOTES"
-        # Ignore empty <NOTES/> "HTML" element.
         content_commonmark = strip(commonmark(xhtml_child, depth = depth))
-        @assert isempty(content_commonmark) "Non empty NOTES: $content_commonmark."
+        if !isempty(content_commonmark)
+          push!(blocks, content_commonmark)
+          push!(blocks, "\n\n")
+        end
       elseif child_name == "p"
         push!(blocks, "\n\n")
         content_commonmark = rstrip(commonmark(xhtml_child, depth = depth))
@@ -397,6 +399,8 @@ function link_articles(articles_by_id)
           if article_start_date < next_article_start_date
             previous_article.next_version = Nullable(article)
             article.next_version = Nullable(next_article)
+          elseif article_start_date == next_article_start_date
+            # The same article number appears twice at the same date. Don't even try to repair.
           else
             @assert isnull(next_article.next_version)
             next_article.next_version = Nullable(article)
@@ -411,6 +415,10 @@ end
 function load_article(dir::String, id::String)
   article_file_path = joinpath(dir, "article", id[1:4], id[5:8], id[9:10], id[11:12], id[13:14], id[15:16], id[17:18],
     id * ".xml")
+  if !ispath(article_file_path)
+    warn("Missing article file $article_file_path.")
+    return @compat Dict{String, Any}()
+  end
   article_xml_document = parse_file(article_file_path)
   return Convertible(parse_xml_element(root(article_xml_document))) |> pipe(
     element_to_article,
@@ -438,14 +446,31 @@ min_date(::Nothing, right::Date) = right
 min_date(::Nothing, ::Nothing) = nothing
 
 
-node_dir_name(simple_node::SimpleNode) = slugify(node_short_title(simple_node))
+function node_dir_name(simple_node::SimpleNode)
+  dir_name = slugify(node_short_title(simple_node))
+  if isempty(dir_name)
+    dir_name = "sans-titre"
+  end
+  return dir_name
+end
 
 node_dir_name(section::Section) = section.dir_name
 
-node_dir_name(table_of_content::Document) = slugify(node_short_title(table_of_content))
+function node_dir_name(table_of_content::Document)
+  dir_name = slugify(node_short_title(table_of_content))
+  if isempty(dir_name)
+    dir_name = "sans-titre"
+  end
+  return dir_name
+end
 
-node_dir_name(table_of_content::TableOfContent) = slugify(node_number_and_simple_title(node_short_title(
-  table_of_content))[2])
+function node_dir_name(table_of_content::TableOfContent)
+  dir_name = slugify(node_number_and_simple_title(node_short_title(table_of_content))[2])
+  if isempty(dir_name)
+    dir_name = "sans-titre"
+  end
+  return dir_name
+end
 
 
 node_filename(article::Article) = string("article-", slugify(node_number(article)), ".md")
@@ -485,7 +510,7 @@ node_name(simple_node::SimpleNode) = node_dir_name(simple_node)
 
 node_number(table_of_content::AbstractTableOfContent) = node_number(node_short_title(table_of_content))
 
-node_number(article::Article) = article.dict["META"]["META_SPEC"]["META_ARTICLE"]["NUM"]
+node_number(article::Article) = get(article.dict["META"]["META_SPEC"]["META_ARTICLE"], "NUM", "")
 
 node_number(section::Section) = node_number(node_short_title(section))
 
@@ -504,8 +529,8 @@ function node_number_and_simple_title(short_title::String)
       continue
     end
     if startswith(fragment_lower, "n°")
-      fragment = fragment[3:end]
-      fragment_lower = fragment_lower[3:end]
+      fragment = fragment[endof("n°"):end]
+      fragment_lower = fragment_lower[endof("n°"):end]
     end
     slug = slugify(fragment_lower)
     if slug in ("chapitre", "livre", "paragraphe", "partie", "section", "sous-paragraphe", "sous-section",
@@ -535,7 +560,15 @@ function node_number_and_simple_title(short_title::String)
 end
 
 
-node_short_title(document::Document) = document.texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITRE"]
+function node_short_title(document::Document)
+  short_title = join(
+    split(document.texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITRE"]), ' ')
+  nor = get(document.texte_version["META"]["META_SPEC"]["META_TEXTE_CHRONICLE"], "NOR", "")
+  if !isempty(nor)
+    short_title = string(short_title, " (", nor, ")")
+  end
+  return short_title
+end
 
 node_short_title(section::Section) = section.short_title
 
@@ -567,22 +600,22 @@ function node_sortable_title(number::String, simple_title::String)
   slug = replace(slug, "-a-l-article-", "-")
   for fragment in split(slug, '-')
     if isdigit(fragment)
-      @assert length(fragment) <= 4
-      push!(number_fragments, ("0000" * fragment)[end - 3 : end])
+      @assert length(fragment) <= 6 "Fragment is too long: $fragment"
+      push!(number_fragments, ("000000" * fragment)[end - 5 : end])
     elseif fragment == "preliminaire"
-      push!(number_fragments, "0000")
+      push!(number_fragments, "000000")
     elseif fragment in ("ier", "legislative", "unique")
-      push!(number_fragments, "0001")
+      push!(number_fragments, "000001")
     elseif fragment in ("reglementaire", "suite")
-      push!(number_fragments, "0002")
+      push!(number_fragments, "000002")
     elseif fragment == "rubrique"
-      push!(number_fragments, "7000")
+      push!(number_fragments, "700000")
     elseif fragment == "sommaire"
-      push!(number_fragments, "8000")
+      push!(number_fragments, "800000")
     elseif fragment == "annexe"
-      push!(number_fragments, "9000")
+      push!(number_fragments, "900000")
     elseif fragment == "tableau"
-      push!(number_fragments, "9500")
+      push!(number_fragments, "950000")
     elseif ismatch(r"^[ivxlcdm]+$", fragment)
       value = 0
       for letter in fragment
@@ -601,8 +634,8 @@ function node_sortable_title(number::String, simple_title::String)
           value += digit
         end
       end
-      @assert value < 10000
-      push!(number_fragments, string("0000", value)[end - 3 : end])
+      @assert value < 1000000
+      push!(number_fragments, string("000000", value)[end - 5 : end])
     else
       number = get(number_by_latin_extension, fragment, "")
       if !isempty(number)
@@ -617,11 +650,11 @@ function node_sortable_title(number::String, simple_title::String)
           push!(number_fragments, fragment)
         elseif 2 <= length(fragment) <= 5 && 'a' <= fragment[1] <= 'z' && isdigit(fragment[2 : end])
           push!(number_fragments, fragment[1 : 1])
-          push!(number_fragments, string("0000", fragment[2 : end])[end - 3 : end])
+          push!(number_fragments, string("000000", fragment[2 : end])[end - 5 : end])
         elseif 3 <= length(fragment) <= 6 && all(letter -> 'a' <= letter <= 'z', fragment[1 : 2]) &&
             isdigit(fragment[3 : end])
           push!(number_fragments, fragment[1 : 2])
-          push!(number_fragments, string("0000", fragment[3 : end])[end - 3 : end])
+          push!(number_fragments, string("000000", fragment[3 : end])[end - 5 : end])
         else
           push!(number_fragments, fragment)
         end
@@ -664,7 +697,8 @@ node_title(simple_node::SimpleNode) = simple_node.title
 
 node_title(section::Section) = section.title
 
-node_title(document::Document) = document.texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITREFULL"]
+node_title(document::Document) = join(
+  split(document.texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITREFULL"]), ' ')
 
 node_title(table_of_content::TableOfContent) = table_of_content.dict["TITRE_TA"]
 
@@ -773,6 +807,9 @@ function parse_structure(table_of_content::AbstractTableOfContent, articles_by_i
 
     article_id = lien_article["@id"]
     article_dict = load_article(dir, article_id)
+    if isempty(article_dict)
+      continue
+    end
     article = Article(table_of_content, max_date(table_of_content_start_date, lien_start_date),
       min_date(table_of_content_stop_date, lien_stop_date), article_dict)
     # When the start date of the article is in conflict with the stop date of its previous version, consider
@@ -898,4 +935,10 @@ function parse_xml_element(xml_element::XMLElement)
     end
   end
   return element
+end
+
+
+function slugify(string::String; separator::Char = '-', transform::Function = lowercase)
+  simplified = replace(replace(string, "N°", "no "), "n°", "no ")
+  return slugify(simplified, separator = separator, transform = transform)
 end

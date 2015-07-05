@@ -49,10 +49,20 @@ validate_date = pipe(
   condition(
     test_equal(nothing),
     noop,
+    test_equal("0002-11-30"),
+    from_value(Date(1960, 8, 7)),
     test_equal("0003-05-19"),
     from_value(Date(1993, 5, 19)),
+    test_equal("0050-06-14"),
+    from_value(Date(1950, 6, 14)),
+    test_equal("0199-03-04"),
+    from_value(Date(1999, 3, 4)),
+    test_equal("0199-08-01"),
+    from_value(Date(1990, 8, 1)),
     test_equal("0881-10-09"),
     from_value(Date(1981, 10, 9)),
+    test_equal("0946-01-01"),
+    from_value(Date(1946, 1, 1)),
     test_equal("0958-09-10"),
     from_value(Date(1958, 9, 10)),
     test_equal("0988-11-30"),
@@ -103,8 +113,8 @@ validate_nature = pipe(
   empty_to_nothing,
   test_in(["ARRETE", "ARRETEEURO", "Article", "AVIS", "CIRCULAIRE", "CODE", "CONSTITUTION", "CONVENTION", "DECISION",
     "DECISION_EURO", "DECLARATION", "DECRET", "DECRETEURO", "DECRET_LOI", "DELIBERATION", "DIRECTIVE_EURO",
-    "INSTRUCTION", "INSTRUCTIONEURO", "LOI", "LOI_CONSTIT", "LOI_ORGANIQUE", "LOI_PROGRAMME", "ORDONNANCE", "RAPPORT",
-    "REGLEMENTEUROPEEN"]),
+    "INSTRUCTION", "INSTRUCTIONEURO", "LOI", "LOI_CONSTIT", "LOI_ORGANIQUE", "LOI_PROGRAMME", "LOIEURO", "ORDONNANCE",
+    "RAPPORT", "REGLEMENTEUROPEEN"]),
 )
 
 
@@ -230,10 +240,7 @@ function element_singleton_to_tm()
                     strip,
                     require,
                   ),
-                  "@debut" => pipe(
-                    validate_date,
-                    require,
-                  ),
+                  "@debut" => validate_date,
                   "@fin" => validate_date,
                   "@id" => pipe(
                     validate_id,
@@ -288,7 +295,7 @@ element_singleton_to_contexte = @compat pipe(
             "@autorite" => pipe(
               test_isa(String),
               empty_to_nothing,
-              test_nothing,
+              test_in(["CONSEIL CONSTITUTIONNEL", "CONSEIL D'ETAT", "COUR DES COMPTES"]),
             ),
             "@cid" => pipe(
               validate_cid,
@@ -297,10 +304,7 @@ element_singleton_to_contexte = @compat pipe(
             "@date_publi" => validate_date,
             "@date_signature" => validate_date,
             "@ministere" => validate_ministere,
-            "@nature" => pipe(
-              validate_nature,
-              require,
-            ),
+            "@nature" => validate_nature,
             "@nor" => validate_nor,
             "@num" => validate_num,
             "TITRE_TXT" => pipe(
@@ -318,12 +322,10 @@ element_singleton_to_contexte = @compat pipe(
                       "^text" => pipe(
                         test_isa(String),
                         strip,
-                        require,
                       ),
                       "@c_titre_court" => pipe(
                         test_isa(String),
                         empty_to_nothing,
-                        require,
                       ),
                       "@debut" => validate_date,
                       "@fin" => validate_date,
@@ -861,7 +863,6 @@ element_to_article = @compat pipe(
                         "NUM" => pipe(
                           element_singleton_to_text,
                           validate_num,
-                          require,
                         ),
                         "TYPE" => pipe(
                           element_singleton_to_text,

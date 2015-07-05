@@ -14,10 +14,10 @@ using ArgParse
 using Biryani
 using Biryani.DatesConverters
 using Compat
-using Dates: Date, DateTime, datetime2unix, Day
+using Dates: Date, DateTime, datetime2unix, Day, year
 using LibGit2
 using LightXML
-using Slugify
+import Slugify
 
 
 include("converters.jl")
@@ -53,14 +53,23 @@ function main()
   if mode == "all"
     documents_dir_walker = @task walk_documents_dir(joinpath(args["legi_dir"], "global"))
     node_by_nature = @compat Dict{String, SimpleNode}()
+    node_by_year_by_container = @compat Dict{SimpleNode, Dict{String, SimpleNode}}()
     root_title = "Lois et règlements français"
-  else
-    @assert mode == "codes"
+  elseif mode == "codes"
     documents_dir_walker = @task walk_documents_dir(
       joinpath(args["legi_dir"], "global", "code_et_TNC_en_vigueur", "code_en_vigueur"),
       joinpath(args["legi_dir"], "global", "code_et_TNC_non_vigueur", "code_non_vigueur"),
     )
     root_title = "Codes juridiques français"
+  else
+    @assert mode == "non-codes"
+    documents_dir_walker = @task walk_documents_dir(
+      joinpath(args["legi_dir"], "global", "code_et_TNC_en_vigueur", "TNC_en_vigueur"),
+      joinpath(args["legi_dir"], "global", "code_et_TNC_non_vigueur", "TNC_non_vigueur"),
+    )
+    node_by_nature = @compat Dict{String, SimpleNode}()
+    node_by_year_by_container = @compat Dict{SimpleNode, Dict{String, SimpleNode}}()
+    root_title = "Lois non codifiées et règlements français"
   end
   codes_en_vigueur_node = nothing
   codes_non_vigueur_node = nothing
@@ -126,9 +135,14 @@ println(document_index, " / ", document_dir)
         document_container = get!(node_by_nature, nature) do
           return SimpleNode(root_node, nature)
         end
-      else
-        @assert mode == "codes"
+      elseif mode == "codes"
         document_container = root_node
+      else
+        @assert mode == "non-codes"
+        nature = get(texte_version["META"]["META_COMMUN"], "NATURE", "nature_inconnue")
+        document_container = get!(node_by_nature, nature) do
+          return SimpleNode(root_node, nature)
+        end
       end
       if contains(document_dir, "code_en_vigueur")
         if codes_en_vigueur_node === nothing
@@ -140,6 +154,15 @@ println(document_index, " / ", document_dir)
           codes_non_vigueur_node = SimpleNode(document_container, "Codes non en vigueur")
         end
         document_container = codes_non_vigueur_node
+      else
+        node_by_year = get!(node_by_year_by_container, document_container) do
+          return @compat Dict{String, SimpleNode}()
+        end
+        start_date = get(texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"], "DATE_DEBUT", nothing)
+        year_text = start_date === nothing ? "Année inconnue" : string(year(start_date))
+        document_container = get!(node_by_year, year_text) do
+          return SimpleNode(document_container, year_text)
+        end
       end
       document = Document(document_container, texte_version, textelr)
 @show node_title(document)
@@ -150,6 +173,9 @@ println()
     link_articles(articles_by_id)
 
     for date in sort(collect(keys(changed_by_message_by_date)))
+      if args["last-date"] !== nothing && date > Date(args["last-date"])
+        continue
+      end
       changed_by_message = changed_by_message_by_date[date]
       for message in sort(collect(keys(changed_by_message)))
         changed = changed_by_message[message]
@@ -381,17 +407,20 @@ function parse_command_line()
     "--erase", "-e"
       action = :store_true
       help = "erase existing Git repository"
+    "--last-date", "-l"
+      help = "remove commits that are too much in the future (more than 25 years) for compatibility with GitLab"
+      range_tester = value -> Convertible(value) |> iso8601_input_to_date |> require |> is_valid
     "--mode", "-m"
       default = "all"
       help = "mode for generated tree of files in Git repository (all, codes)"
-      range_tester = value -> value in ("all", "codes")
+      range_tester = value -> value in ("all", "codes", "non-codes")
     "--readme", "-r"
       default = "flat"
       help = "mode for README file (deep, flat, none, single-page)"
       range_tester = value -> value in ("deep", "flat", "none", "single-page")
     "--start", "-s"
       help = "CID of first LEGI document to parse"
-      range_tester = value -> Convertible(value) |> pipe(validate_cid, require) |> is_valid
+      range_tester = value -> Convertible(value) |> validate_cid |> require |> is_valid
     "--verbose", "-v"
       action = :store_true
       help = "increase output verbosity"
