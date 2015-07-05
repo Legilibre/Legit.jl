@@ -541,7 +541,7 @@ function node_number_and_simple_title(short_title::String)
       # Partie législative, partie réglementaire, chapître préliminaire
       push!(number_fragments, fragment)
       push!(simple_title_fragments, fragment)
-    elseif isdigit(fragment) || slug in ("ier", "unique") || ismatch(r"^[ivxlcdm]+$",fragment_lower) ||
+    elseif isdigit(fragment) || slug in ("ier", "unique") || ismatch(r"^[ivxlcdm]+$", fragment_lower) ||
         slug in keys(number_by_latin_extension) || slug in keys(number_by_slug) ||
         length(slug) <= 3 && all(letter -> 'a' <= letter <= 'z', slug) &&
           !(slug in ("de", "des", "du", "en", "la", "le", "les")) ||
