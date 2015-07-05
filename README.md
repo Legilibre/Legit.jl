@@ -16,11 +16,13 @@ LEGI Files:
 
 ## Example
 
-To convert all the legal codes:
+### Conversion of all the legal codes
 
-    julia src/Legit.jl -d -e -m codes ../legi ../codes-juridiques-francais.git
+Generate the commits, sorted by code:
 
-To reorder the commits by dates et by messages:
+    julia src/Legit.jl -d -e -l 2020-12-31 -m codes ../legi ../codes-juridiques-francais.git
+
+Reorder the commits by dates et by messages:
 
     julia src/LegitReorderCommits.jl ../codes-juridiques-francais.git
 
@@ -30,16 +32,34 @@ To delete this "reordered" branch (to launch the script once again after a failu
 
     git branch -d reordered
 
-To push this branch to its Git repository (as master):
+Push this branch to its Git repository (as master):
 
-    git remote add origin git@git.framasoft.org:etalab/codes-juridiques-francais.git
-    git push -u origin +reordered:master
+    git remote add framasoft git@git.framasoft.org:etalab/codes-juridiques-francais.git
+    git push -u framasoft +reordered:master
 
 To see the generated Git repository: https://git.framasoft.org/etalab/codes-juridiques-francais/tree/master.
 
 To remove the remote "origin/master"  branch:
 
     git branch -rd origin/master
+
+### Conversion of all the legislation that doesn't belong to legal codes
+
+Generate the commits, sorted by legal document:
+
+    julia src/Legit.jl -d -e -l 2020-12-31 -m non-codes ../legi ../lois-non-codifiees-et-reglements-francais.git
+
+Reorder the commits by dates et by messages:
+
+    julia src/LegitReorderCommits.jl ../lois-non-codifiees-et-reglements-francais.git/
+
+Push this branch to its Git repository (as master):
+
+    git remote add framasoft git@git.framasoft.org:etalab/lois-non-codifiees-et-reglements-francais.git
+    git push -u framasoft +reordered:master
+
+To see the generated Git repository: https://git.framasoft.org/etalab/lois-non-codifiees-et-reglements-francais/tree/master.
+
 
 <!--
 To convert the law "Loi n° 78-753 du 17 juillet 1978 portant diverses mesures d'amélioration des relations entre
