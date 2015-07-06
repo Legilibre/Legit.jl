@@ -8,59 +8,59 @@
 
 
 const number_by_latin_extension = @compat Dict{String, String}(
-  "bis" => "0002",
-  "ter" => "0003",
-  "quater" => "0004",
-  "quinquies" => "0005",
-  "sexies" => "0006",
-  "septies" => "0007",
-  "octies" => "0008",
-  "nonies" => "0009",
-  "decies" => "0010",
-  "undecies" => "0011",
-  "duodecies" => "0012",
-  "terdecies" => "0013",
-  "quaterdecies" => "0014",
-  "quindecies" => "0015",
-  "quinquedecies" => "0015",
-  "sexdecies" => "0016",
-  "septdecies" => "0017",
-  "octodecies" => "0018",
-  "novodecies" => "0019",
-  "vicies" => "0020",
-  "unvicies" => "0021",
-  "duovicies" => "0022",
-  "tervicies" => "0023",
-  "quatervicies" => "0024",
-  "quinvicies" => "0025",
-  "sexvicies" => "0026",
-  "septvicies" => "0027",
-  "octovicies" => "0028",
-  "novovicies" => "0029",
-  "tricies" => "0030",
-  "untricies" => "0031",
-  "duotricies" => "0032",
-  "tertricies" => "0033",
-  "quatertricies" => "0034",
-  "quintricies" => "0035",
-  "sextricies" => "0036",
-  "septtricies" => "0037",
-  "octotricies" => "0038",
-  "novotricies" => "0039",
+  "bis" => "0000020",
+  "ter" => "0000030",
+  "quater" => "0000040",
+  "quinquies" => "0000050",
+  "sexies" => "0000060",
+  "septies" => "0000070",
+  "octies" => "0000080",
+  "nonies" => "0000090",
+  "decies" => "0000100",
+  "undecies" => "0000110",
+  "duodecies" => "0000120",
+  "terdecies" => "0000130",
+  "quaterdecies" => "0000140",
+  "quindecies" => "0000150",
+  "quinquedecies" => "0000150",
+  "sexdecies" => "0000160",
+  "septdecies" => "0000170",
+  "octodecies" => "0000180",
+  "novodecies" => "0000190",
+  "vicies" => "0000200",
+  "unvicies" => "0000210",
+  "duovicies" => "0000220",
+  "tervicies" => "0000230",
+  "quatervicies" => "0000240",
+  "quinvicies" => "0000250",
+  "sexvicies" => "0000260",
+  "septvicies" => "0000270",
+  "octovicies" => "0000280",
+  "novovicies" => "0000290",
+  "tricies" => "0000300",
+  "untricies" => "0000310",
+  "duotricies" => "0000320",
+  "tertricies" => "0000330",
+  "quatertricies" => "0000340",
+  "quintricies" => "0000350",
+  "sextricies" => "0000360",
+  "septtricies" => "0000370",
+  "octotricies" => "0000380",
+  "novotricies" => "0000390",
 )
 
 const number_by_slug = @compat Dict{String, String}(
-  "premier" => "0001",
-  "premiere" => "0001",
-  "deuxieme" => "0002",
-  "troisieme" => "0003",
-  "quatrieme" => "0004",
-  "cinquieme" => "0005",
-  "sixieme" => "0006",
-  "septieme" => "0007",
-  "huitieme" => "0008",
-  "neuvieme" => "0009",
-  "dixieme" => "0010",
+  "premier" => "0000010",
+  "premiere" => "0000010",
+  "deuxieme" => "0000020",
+  "troisieme" => "0000030",
+  "quatrieme" => "0000040",
+  "cinquieme" => "0000050",
+  "sixieme" => "0000060",
+  "septieme" => "0000070",
+  "huitieme" => "0000080",
+  "neuvieme" => "0000090",
+  "dixieme" => "0000100",
 )
 
 
@@ -92,14 +92,6 @@ Article(container::AbstractTableOfContent, start_date::Union(Date, Nothing), sto
   dict::Dict) = @compat Article(container, start_date, stop_date, dict, Nullable{Article}())
 
 
-type Changed
-  articles::Array{Article}
-  deleted_articles::Array{Article}
-
-  Changed() = new(Article[], Article[])
-end
-
-
 type Document <: AbstractTableOfContent
   container::Node  # TODO: SimpleNode or RootNode or Section
   texte_version::Dict  # Dict{String, Any}
@@ -113,10 +105,20 @@ type Document <: AbstractTableOfContent
 end
 
 
-# type NonArticle
-#   title::String
-#   content::XMLElement
-# end
+type NonArticle <: Node
+  container::AbstractTableOfContent
+  kind::String
+  title::String
+  content::XMLElement
+end
+
+
+type Changed
+  articles::Array{Union(Article, NonArticle)}
+  deleted_articles::Array{Article}
+
+  Changed() = new(Article[], Article[])
+end
 
 
 type Section <: Node
@@ -180,25 +182,25 @@ function commonmark(article::Article, mode::String; depth::Int = 1)
   return join(blocks)
 end
 
-# function commonmark(non_article::NonArticle, mode::String; depth::Int = 1)
-#   blocks = String[]
-#   if !isempty(non_article.title)
-#     push!(blocks,
-#       "#" ^ depth,
-#       " ",
-#       non_article.title,
-#       "\n\n",
-#     )
-#   end
-#   content = commonmark(non_article.dict["BLOC_TEXTUEL"]["CONTENU"])
-#   content = join(map(strip, split(content, '\n')), '\n')
-#   while searchindex(content, "\n\n\n") > 0
-#     content = replace(content, "\n\n\n", "\n\n")
-#   end
-#   push!(blocks, strip(content))
-#   push!(blocks, "\n\n")
-#   return join(blocks)
-# end
+function commonmark(non_article::NonArticle, mode::String; depth::Int = 1)
+  blocks = String[]
+  if !isempty(non_article.title)
+    push!(blocks,
+      "#" ^ depth,
+      " ",
+      non_article.title,
+      "\n\n",
+    )
+  end
+  content = commonmark(non_article.content)
+  content = join(map(strip, split(content, '\n')), '\n')
+  while searchindex(content, "\n\n\n") > 0
+    content = replace(content, "\n\n\n", "\n\n")
+  end
+  push!(blocks, strip(content))
+  push!(blocks, "\n\n")
+  return join(blocks)
+end
 
 commonmark(section::Section, mode::String; depth::Int = 1) = string(
   "#" ^ depth,
@@ -475,10 +477,14 @@ end
 
 node_filename(article::Article) = string("article-", slugify(node_number(article)), ".md")
 
+node_filename(non_article::NonArticle) = string(non_article.kind, ".md")
+
 node_filename(node::Node) = node_dir_name(node) * ".md"
 
 
 node_git_dir(article::Article) = node_git_dir(article.container)
+
+node_git_dir(non_article::NonArticle) = node_git_dir(non_article.container)
 
 node_git_dir(::RootNode) = ""
 
@@ -504,6 +510,8 @@ node_id(node_dict::Dict) = node_dict["META"]["META_COMMUN"]["ID"]
 node_name(table_of_content::AbstractTableOfContent) = node_dir_name(table_of_content)
 
 node_name(article::Article) = node_filename(article)
+
+node_name(non_article::NonArticle) = node_filename(non_article)
 
 node_name(simple_node::SimpleNode) = node_dir_name(simple_node)
 
@@ -570,6 +578,11 @@ function node_short_title(document::Document)
   return short_title
 end
 
+node_short_title(non_article::NonArticle) = @compat Dict{String, String}(
+  "signataires" => "Signataires",
+  "visas" => "Visas",
+)[non_article.kind]
+
 node_short_title(section::Section) = section.short_title
 
 node_short_title(section::UnparsedSection) = section.short_title
@@ -578,6 +591,11 @@ node_short_title(node::Node) = node_title(node)
 
 
 node_sortable_title(article::Article) = node_sortable_title(node_number(article), node_short_title(article))
+
+node_sortable_title(non_article::NonArticle) = @compat Dict{String, String}(
+  "signataires" => "9999998",
+  "visas" => "0000002",
+)[non_article.kind]
 
 node_sortable_title(section::Section) = section.sortable_title
 
@@ -601,21 +619,21 @@ function node_sortable_title(number::String, simple_title::String)
   for fragment in split(slug, '-')
     if isdigit(fragment)
       @assert length(fragment) <= 6 "Fragment is too long: $fragment"
-      push!(number_fragments, ("000000" * fragment)[end - 5 : end])
+      push!(number_fragments, string("000000", fragment, '0')[end - 6 : end])
     elseif fragment == "preliminaire"
-      push!(number_fragments, "000000")
+      push!(number_fragments, "0000005")
     elseif fragment in ("ier", "legislative", "unique")
-      push!(number_fragments, "000001")
+      push!(number_fragments, "0000010")
     elseif fragment in ("reglementaire", "suite")
-      push!(number_fragments, "000002")
+      push!(number_fragments, "0000020")
     elseif fragment == "rubrique"
-      push!(number_fragments, "700000")
+      push!(number_fragments, "7000000")
     elseif fragment == "sommaire"
-      push!(number_fragments, "800000")
+      push!(number_fragments, "8000000")
     elseif fragment == "annexe"
-      push!(number_fragments, "900000")
+      push!(number_fragments, "9000000")
     elseif fragment == "tableau"
-      push!(number_fragments, "950000")
+      push!(number_fragments, "9500000")
     elseif ismatch(r"^[ivxlcdm]+$", fragment)
       value = 0
       for letter in fragment
@@ -635,7 +653,7 @@ function node_sortable_title(number::String, simple_title::String)
         end
       end
       @assert value < 1000000
-      push!(number_fragments, string("000000", value)[end - 5 : end])
+      push!(number_fragments, string("000000", value, '0')[end - 6 : end])
     else
       number = get(number_by_latin_extension, fragment, "")
       if !isempty(number)
@@ -644,17 +662,16 @@ function node_sortable_title(number::String, simple_title::String)
         number = get(number_by_slug, fragment, "")
         if !isempty(number)
           push!(number_fragments, number)
-        elseif length(fragment) <= 3 && all(letter -> 'a' <= letter <= 'z', fragment) ||
-            length(fragment) <= 3 && all(letter -> 'a' <= letter <= 'z', fragment) &&
-              !(fragment in ("de", "des", "du", "en", "la", "le", "les"))
+        elseif length(fragment) <= 3 && all(letter -> 'a' <= letter <= 'z', fragment) &&
+            !(fragment in ("de", "des", "du", "en", "la", "le", "les"))
           push!(number_fragments, fragment)
         elseif 2 <= length(fragment) <= 5 && 'a' <= fragment[1] <= 'z' && isdigit(fragment[2 : end])
           push!(number_fragments, fragment[1 : 1])
-          push!(number_fragments, string("000000", fragment[2 : end])[end - 5 : end])
+          push!(number_fragments, string("000000", fragment[2 : end], '0')[end - 6 : end])
         elseif 3 <= length(fragment) <= 6 && all(letter -> 'a' <= letter <= 'z', fragment[1 : 2]) &&
             isdigit(fragment[3 : end])
           push!(number_fragments, fragment[1 : 2])
-          push!(number_fragments, string("000000", fragment[3 : end])[end - 5 : end])
+          push!(number_fragments, string("000000", fragment[3 : end], '0')[end - 6 : end])
         else
           push!(number_fragments, fragment)
         end

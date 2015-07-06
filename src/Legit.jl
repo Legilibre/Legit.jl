@@ -106,6 +106,8 @@ println(document_index, " / ", document_dir)
 
     articles_by_id = @compat Dict{String, Vector{Article}}()  # Articles are sorted by start date for each ID.
     changed_by_message_by_date = @compat Dict{Date, Dict{String, Changed}}()
+    signataires = nothing
+    visas = nothing
     for (version_filename, struct_filename) in zip(version_filenames, struct_filenames)
       version_xml_document = parse_file(joinpath(version_dir, version_filename))
       texte_version = Convertible(parse_xml_element(root(version_xml_document))) |> pipe(
@@ -122,16 +124,6 @@ println(document_index, " / ", document_dir)
         require,
       ) |> to_value
       # free(struct_xml_document)
-
-      # articles_tree = parse_structure(changed_by_changer, document_dir, textelr["STRUCT"],
-      #   texte_version["META"]["META_SPEC"]["META_TEXTE_VERSION"]["TITREFULL"])
-      # if get(texte_version, "VISAS", nothing) != nothing
-      #   unshift!(articles_tree.children, NonArticle("", texte_version["VISAS"]["CONTENU"]))
-      # end
-      # if get(texte_version, "SIGNATAIRES", nothing) != nothing
-      #   push!(articles_tree.children, NonArticle("", texte_version["SIGNATAIRES"]["CONTENU"]))
-      # end
-      # print(commonmark(articles_tree, readme_mode))
 
       if mode == "all"
         nature = get(texte_version["META"]["META_COMMUN"], "NATURE", "nature_inconnue")
@@ -171,16 +163,30 @@ println(document_index, " / ", document_dir)
 @show node_title(document)
 println("=============================================================================================================")
 println()
+
+      if signataires === nothing
+        signataires_dict = get(document.texte_version, "SIGNATAIRES", nothing)
+        if signataires_dict !== nothing
+          signataires = NonArticle(document, "signataires", "", signataires_dict["CONTENU"])
+        end
+      end
+      if visas === nothing
+        visas_dict = get(document.texte_version, "VISAS", nothing)
+        if visas_dict !== nothing
+          visas = NonArticle(document, "visas", "", visas_dict["CONTENU"])
+        end
+      end
+
       parse_structure(document, articles_by_id, changed_by_message_by_date, document_dir)
     end
     link_articles(articles_by_id)
 
-    for date in sort(collect(keys(changed_by_message_by_date)))
+    for (date_index, date) in enumerate(sort(collect(keys(changed_by_message_by_date))))
       if args["last-date"] !== nothing && date > Date(args["last-date"])
         continue
       end
       changed_by_message = changed_by_message_by_date[date]
-      for message in sort(collect(keys(changed_by_message)))
+      for (message_index, message) in enumerate(sort(collect(keys(changed_by_message))))
         changed = changed_by_message[message]
 println("-------------------------------------------------------------------------------------------------------------")
 println("$date $message")
@@ -197,9 +203,22 @@ println("$date $message")
         committer_signature = author_signature
         commit_needed = false
 
+        if date_index == 1 && message_index == 1
+          if visas !== nothing
+            unshift!(changed.articles, visas)
+          end
+          if signataires !== nothing
+            push!(changed.articles, signataires)
+          end
+        end
+
         # Update sections tree.
         for article in changed.articles
-println("Upserted: ", string(node_id(article), " ", node_git_file_path(article)))
+if isa(article, Article)
+  println("Upserted: ", node_id(article), " ", node_git_file_path(article), ".")
+else
+  println("Upserted: non article ", node_git_file_path(article), ".")
+end
           nodes = Node[]
           container = article.container
           while true
