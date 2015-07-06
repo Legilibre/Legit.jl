@@ -76,6 +76,9 @@ function main()
   root_node = RootNode(root_title)
   skip_documents = args["start"] !== nothing
   for (document_index, document_dir) in enumerate(documents_dir_walker)
+    if args["only"] !== nothing && basename(document_dir) != args["only"]
+      continue
+    end
     if skip_documents
       document_cid = basename(document_dir)
       if document_cid == args["start"]
@@ -414,6 +417,9 @@ function parse_command_line()
       default = "all"
       help = "mode for generated tree of files in Git repository (all, codes)"
       range_tester = value -> value in ("all", "codes", "non-codes")
+    "--only", "-o"
+      help = "CID of single LEGI document to parse"
+      range_tester = value -> Convertible(value) |> validate_cid |> require |> is_valid
     "--readme", "-r"
       default = "flat"
       help = "mode for README file (deep, flat, none, single-page)"
