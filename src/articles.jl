@@ -172,6 +172,7 @@ function commonmark(article::Article, mode::String; depth::Int = 1)
     node_title(article),
     "\n\n",
   ]
+
   content = commonmark(article.dict["BLOC_TEXTUEL"]["CONTENU"])
   content = join(map(strip, split(content, '\n')), '\n')
   while searchindex(content, "\n\n\n") > 0
@@ -179,6 +180,19 @@ function commonmark(article::Article, mode::String; depth::Int = 1)
   end
   push!(blocks, strip(content))
   push!(blocks, "\n")
+
+  nota = get(article.dict, "NOTA", nothing)
+  if nota !== nothing
+    push!(blocks, "\n## Nota\n\n")
+    content = commonmark(nota["CONTENU"])
+    content = join(map(strip, split(content, '\n')), '\n')
+    while searchindex(content, "\n\n\n") > 0
+      content = replace(content, "\n\n\n", "\n\n")
+    end
+    push!(blocks, strip(content))
+    push!(blocks, "\n")
+  end
+
   return join(blocks)
 end
 
@@ -579,6 +593,7 @@ function node_short_title(document::Document)
 end
 
 node_short_title(non_article::NonArticle) = @compat Dict{String, String}(
+  "notes" => "Nota",
   "signataires" => "Signataires",
   "visas" => "Visas",
 )[non_article.kind]
@@ -593,7 +608,8 @@ node_short_title(node::Node) = node_title(node)
 node_sortable_title(article::Article) = node_sortable_title(node_number(article), node_short_title(article))
 
 node_sortable_title(non_article::NonArticle) = @compat Dict{String, String}(
-  "signataires" => "9999998",
+  "notes" => "9999998",
+  "signataires" => "9999997",
   "visas" => "0000002",
 )[non_article.kind]
 

@@ -106,6 +106,7 @@ println(document_index, " / ", document_dir)
 
     articles_by_id = @compat Dict{String, Vector{Article}}()  # Articles are sorted by start date for each ID.
     changed_by_message_by_date = @compat Dict{Date, Dict{String, Changed}}()
+    notes = nothing
     signataires = nothing
     visas = nothing
     for (version_filename, struct_filename) in zip(version_filenames, struct_filenames)
@@ -164,6 +165,12 @@ println(document_index, " / ", document_dir)
 println("=============================================================================================================")
 println()
 
+      if notes === nothing
+        notes_dict = get(document.texte_version, "NOTA", nothing)
+        if notes_dict !== nothing
+          notes = NonArticle(document, "notes", "Nota", notes_dict["CONTENU"])
+        end
+      end
       if signataires === nothing
         signataires_dict = get(document.texte_version, "SIGNATAIRES", nothing)
         if signataires_dict !== nothing
@@ -209,6 +216,9 @@ println("$date $message")
           end
           if signataires !== nothing
             push!(changed.articles, signataires)
+          end
+          if notes !== nothing
+            push!(changed.articles, notes)
           end
         end
 
